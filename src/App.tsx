@@ -5,6 +5,9 @@ import { createInitialState, endTurn, researchTech, trainUnit } from './game'
 import { findPath, isReachable, chebyshev } from './game/pathfinding'
 import { resolveCombat, canAttack } from './game/combat'
 import { isRangedUnit } from './game/units'
+import type { AiConfig } from './game/aiCompact'
+import { requestAiActions } from './game/aiClient'
+import { applyAiActions } from './game/aiRunner'
 import { PolytopiaWorld } from './components/World/PolytopiaWorld'
 import { CameraFocus } from './components/World/CameraFocus'
 import { HUD } from './components/UI/HUD'
@@ -42,13 +45,19 @@ function App() {
   const [toast, setToast] = useState<string | null>(null)
   const [focusKey, setFocusKey] = useState(0)
   const [playMode, setPlayMode] = useState<'pass-and-play' | 'vs-ai'>('pass-and-play')
+  const [aiConfig, setAiConfig] = useState<AiConfig | null>(null)
+  const [aiBusy, setAiBusy] = useState(false)
   const prevPlayerIndex = useRef(0)
+  const aiAbort = useRef<AbortController | null>(null)
+  const stateRef = useRef(state)
+  stateRef.current = state
 
   const currentPlayer = state.players[state.currentPlayerIndex]
   const humanTribe = state.players[0]?.tribe
   const isAiTurn =
     playMode === 'vs-ai' && currentPlayer.tribe !== humanTribe && !state.gameOver
 
+  // Toast + camera on turn change
   useEffect(() => {
     if (!started) return
 
@@ -60,10 +69,10 @@ function App() {
     const tribeLabel = TRIBE_NAMES[currentPlayer.tribe] ?? currentPlayer.tribe
     if (state.currentPlayerIndex !== prevPlayerIndex.current || state.turn === 1) {
       if (playMode === 'vs-ai' && currentPlayer.tribe !== humanTribe) {
-        setToast('AI turn — thinking… (runner not wired yet; use End Turn to skip)')
+        setToast(`AI (${aiConfig?.provider ?? 'llm'}) is thinking…`)
       } else {
         setToast(
-          `You are ${tribeLabel.toUpperCase()}. Tap your unit, then tap a highlighted tile to move.`
+          `You are ${tribeLabel.toUpperCase()}. Tap your unit, then a highlighted tile to move.`
         )
       }
       setFocusKey((k) => k + 1)
@@ -78,18 +87,56 @@ function App() {
     currentPlayer.tribe,
     playMode,
     humanTribe,
+    aiConfig?.provider,
   ])
+
+  // Run AI turn automatically
+  useEffect(() => {
+    if (!started || !isAiTurn || !aiConfig || aiBusy || state.gameOver) return
+
+    const playerIndex = state.currentPlayerIndex
+    const tribe = state.players[playerIndex].tribe
+    const ctrl = new AbortController()
+    aiAbort.current = ctrl
+    setAiBusy(true)
+
+    ;(async () => {
+      try {
+        const snapshot = stateRef.current
+        const actions = await requestAiActions(snapshot, tribe, aiConfig, ctrl.signal)
+        if (ctrl.signal.aborted) return
+        const { state: next, log } = applyAiActions(snapshot, actions, playerIndex)
+        setState(next)
+        setSelectedUnitId(null)
+        setShowTech(false)
+        const summary = log.filter((l) => !l.startsWith('skip')).slice(0, 4).join(' · ') || 'end'
+        setToast(`AI turn done: ${summary}`)
+      } catch (err) {
+        if (ctrl.signal.aborted) return
+        const msg = err instanceof Error ? err.message : 'AI request failed'
+        setToast(`AI error — ending turn. ${msg.slice(0, 120)}`)
+        setState((prev) => endTurn(prev))
+        setSelectedUnitId(null)
+      } finally {
+        if (!ctrl.signal.aborted) setAiBusy(false)
+      }
+    })()
+
+    return () => {
+      ctrl.abort()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [started, isAiTurn, aiConfig, state.currentPlayerIndex, state.turn, state.gameOver])
 
   const tryMoveOrAttack = useCallback(
     (targetX: number, targetY: number) => {
-      if (isAiTurn || !selectedUnitId || state.gameOver) return
+      if (isAiTurn || aiBusy || !selectedUnitId || state.gameOver) return
       const unit = state.units[selectedUnitId]
       if (!unit || unit.tribe !== currentPlayer.tribe || unit.acted) return
 
       const occupant = Object.values(state.units).find(
         (u) => u.x === targetX && u.y === targetY && u.health > 0 && u.id !== unit.id
       )
-      // Friendly unit on target: allow only if target is own city (stacking at capital)
       if (occupant && occupant.tribe === unit.tribe) {
         const cityThere = Object.values(state.cities).some(
           (c) => c.x === targetX && c.y === targetY && c.tribe === unit.tribe
@@ -165,12 +212,12 @@ function App() {
       setSelectedUnitId(null)
       setToast('Moved. Tap End Turn when finished.')
     },
-    [selectedUnitId, state, currentPlayer, isAiTurn]
+    [selectedUnitId, state, currentPlayer, isAiTurn, aiBusy]
   )
 
   const handleSelectUnit = useCallback(
     (id: string | null) => {
-      if (isAiTurn) return
+      if (isAiTurn || aiBusy) return
       if (!id) {
         setSelectedUnitId(null)
         return
@@ -192,17 +239,18 @@ function App() {
         setToast('Highlighted tiles show where you can move. Tap one to move.')
       }
     },
-    [state.units, currentPlayer.tribe, isAiTurn]
+    [state.units, currentPlayer.tribe, isAiTurn, aiBusy]
   )
 
   const handleEndTurn = () => {
+    if (isAiTurn || aiBusy) return
     setState((prev) => endTurn(prev))
     setSelectedUnitId(null)
     setShowTech(false)
   }
 
   const handleResearch = (techId: TechId) => {
-    if (isAiTurn) return
+    if (isAiTurn || aiBusy) return
     setState((prev) => {
       const next = researchTech(prev, prev.currentPlayerIndex, techId)
       if (next) {
@@ -219,7 +267,7 @@ function App() {
   }
 
   const handleTrain = (unitType: UnitType) => {
-    if (isAiTurn || state.gameOver) return
+    if (isAiTurn || aiBusy || state.gameOver) return
     setState((prev) => {
       const next = trainUnit(prev, prev.currentPlayerIndex, unitType)
       if (next) {
@@ -251,6 +299,7 @@ function App() {
 
     setState(next)
     setPlayMode(config.mode)
+    setAiConfig(config.ai ?? null)
     if (config.ai?.apiKey) {
       try {
         sessionStorage.setItem('polytopia_ai_provider', config.ai.provider)
@@ -261,12 +310,13 @@ function App() {
     }
     setSelectedUnitId(null)
     setShowTech(false)
+    setAiBusy(false)
     setStarted(true)
     setFocusKey((k) => k + 1)
     const tribe = TRIBE_NAMES[next.players[0].tribe] ?? next.players[0].tribe
     setToast(
       config.mode === 'vs-ai'
-        ? `You are ${tribe}. ${size}×${size}, ${config.difficulty}. AI ready.`
+        ? `You are ${tribe}. ${size}×${size}, ${config.difficulty}. AI: ${config.ai?.provider}.`
         : `You are ${tribe.toUpperCase()}. ${size}×${size}, ${config.difficulty}. Tap a unit to move.`
     )
   }
@@ -297,9 +347,8 @@ function App() {
           alpha: false,
         }}
         style={{ width: '100%', height: '100%' }}
-        onPointerMissed={() => !isAiTurn && setSelectedUnitId(null)}
+        onPointerMissed={() => !isAiTurn && !aiBusy && setSelectedUnitId(null)}
       >
-        {/* Slightly softer cartoon sky */}
         <color attach="background" args={['#4ab0d8']} />
         <fog attach="fog" args={['#6bc4e0', 48, 125]} />
 
@@ -340,7 +389,7 @@ function App() {
           state={state}
           selectedUnitId={selectedUnitId}
           showTech={showTech}
-          onToggleTech={() => !isAiTurn && setShowTech((v) => !v)}
+          onToggleTech={() => !isAiTurn && !aiBusy && setShowTech((v) => !v)}
           onEndTurn={handleEndTurn}
           onResearch={handleResearch}
           onTrain={handleTrain}
