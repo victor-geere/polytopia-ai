@@ -4,6 +4,7 @@ import { TerrainCSGFeatures } from './TerrainCSG'
 import { UnitLayer } from '../Units/UnitLayer'
 import { CityLayer } from './CityLayer'
 import { ClickableTiles } from './ClickableTiles'
+import { ClanBillboards } from '../Units/ClanBillboards'
 import type { GameState } from '../../game/types'
 
 interface Props {
@@ -29,6 +30,7 @@ export function PolytopiaWorld({
         selectedUnitId={selectedUnitId}
         onSelectUnit={onSelectUnit}
       />
+      <ClanBillboards state={state} />
       <ClickableTiles
         state={state}
         selectedUnitId={selectedUnitId}

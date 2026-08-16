@@ -1,12 +1,19 @@
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
-import { Suspense, useState, useCallback } from 'react'
+import { Suspense, useState, useCallback, useEffect, useRef } from 'react'
 import { createInitialState, endTurn, researchTech } from './game'
 import { findPath, isReachable, chebyshev } from './game/pathfinding'
 import { resolveCombat, canAttack } from './game/combat'
 import { PolytopiaWorld } from './components/World/PolytopiaWorld'
 import { HUD } from './components/UI/HUD'
+import { Splash } from './components/UI/Splash'
+import { Toast } from './components/UI/Toast'
 import type { GameState, TechId } from './game/types'
+
+const TRIBE_NAMES: Record<string, string> = {
+  imperius: 'Imperius',
+  bardur: 'Bardur',
+}
 
 function App() {
   const [state, setState] = useState<GameState>(() =>
@@ -19,8 +26,30 @@ function App() {
   )
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null)
   const [showTech, setShowTech] = useState(false)
+  const [started, setStarted] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+  const prevPlayerIndex = useRef(0)
 
   const currentPlayer = state.players[state.currentPlayerIndex]
+  const yourTribeName = TRIBE_NAMES[currentPlayer.tribe] ?? currentPlayer.tribe
+
+  // Guide toast when game starts or turn changes
+  useEffect(() => {
+    if (!started) return
+
+    if (state.gameOver) {
+      setToast(`Game over — ${state.winner?.toUpperCase()} wins!`)
+      return
+    }
+
+    const tribeLabel = TRIBE_NAMES[currentPlayer.tribe] ?? currentPlayer.tribe
+    if (state.currentPlayerIndex !== prevPlayerIndex.current || state.turn === 1) {
+      setToast(
+        `You are ${tribeLabel.toUpperCase()}. Tap your unit, then tap a gold tile to move.`
+      )
+    }
+    prevPlayerIndex.current = state.currentPlayerIndex
+  }, [started, state.currentPlayerIndex, state.turn, state.gameOver, state.winner, currentPlayer.tribe])
 
   const tryMoveOrAttack = useCallback(
     (targetX: number, targetY: number) => {
@@ -28,16 +57,17 @@ function App() {
       const unit = state.units[selectedUnitId]
       if (!unit || unit.tribe !== currentPlayer.tribe || unit.acted) return
 
-      // Don't move onto your own unit
       const occupant = Object.values(state.units).find(
         (u) => u.x === targetX && u.y === targetY && u.health > 0
       )
       if (occupant && occupant.tribe === unit.tribe) return
 
-      // Attack enemy
       if (occupant && occupant.tribe !== unit.tribe) {
         const dist = chebyshev(unit.x, unit.y, occupant.x, occupant.y)
-        if (!canAttack(unit, occupant, dist)) return
+        if (!canAttack(unit, occupant, dist)) {
+          setToast('Enemy is out of attack range.')
+          return
+        }
 
         const tile = state.tiles[occupant.y][occupant.x]
         const { attacker, defender } = resolveCombat(unit, occupant, tile)
@@ -53,8 +83,10 @@ function App() {
                 ? { ...p, units: p.units.filter((id) => id !== defender.id) }
                 : p
             )
+            setToast('Enemy unit defeated!')
           } else {
             units[defender.id] = defender
+            setToast(`Hit! Enemy HP: ${defender.health}`)
           }
           return { ...prev, units, players }
         })
@@ -62,10 +94,15 @@ function App() {
         return
       }
 
-      // Move to empty tile
-      if (!isReachable(state, unit.x, unit.y, targetX, targetY, unit.movement)) return
+      if (!isReachable(state, unit.x, unit.y, targetX, targetY, unit.movement)) {
+        setToast('That tile is out of movement range.')
+        return
+      }
       const path = findPath(state, unit.x, unit.y, targetX, targetY, unit.movement)
-      if (!path) return
+      if (!path) {
+        setToast('No path to that tile.')
+        return
+      }
 
       setState((prev) => {
         const units = { ...prev.units }
@@ -79,8 +116,31 @@ function App() {
         return { ...prev, units }
       })
       setSelectedUnitId(null)
+      setToast('Moved. Tap End Turn when finished.')
     },
     [selectedUnitId, state, currentPlayer]
+  )
+
+  const handleSelectUnit = useCallback(
+    (id: string | null) => {
+      if (!id) {
+        setSelectedUnitId(null)
+        return
+      }
+      const unit = state.units[id]
+      if (!unit) return
+      if (unit.tribe !== currentPlayer.tribe) {
+        setToast(`That unit belongs to ${TRIBE_NAMES[unit.tribe] ?? unit.tribe}.`)
+        return
+      }
+      if (unit.acted) {
+        setToast('This unit has already acted this turn.')
+        return
+      }
+      setSelectedUnitId(id)
+      setToast('Gold tiles show where you can move. Tap one to move.')
+    },
+    [state.units, currentPlayer.tribe]
   )
 
   const handleEndTurn = () => {
@@ -92,14 +152,30 @@ function App() {
   const handleResearch = (techId: TechId) => {
     setState((prev) => {
       const next = researchTech(prev, prev.currentPlayerIndex, techId)
+      if (next) setToast('Technology researched!')
+      else setToast('Cannot research that (cost or prerequisites).')
       return next ?? prev
     })
+  }
+
+  const handleStart = () => {
+    setStarted(true)
+    setToast(
+      `You are ${yourTribeName.toUpperCase()}. Tap your unit, then a gold tile to move.`
+    )
   }
 
   const camDist = 14
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative', touchAction: 'none' }}>
+      {!started && (
+        <Splash
+          onStart={handleStart}
+          yourTribe={yourTribeName}
+        />
+      )}
+
       <Canvas
         camera={{
           position: [camDist * 0.7, camDist * 0.9, camDist * 0.7],
@@ -126,7 +202,7 @@ function App() {
           <PolytopiaWorld
             state={state}
             selectedUnitId={selectedUnitId}
-            onSelectUnit={setSelectedUnitId}
+            onSelectUnit={handleSelectUnit}
             onTileClick={tryMoveOrAttack}
           />
         </Suspense>
@@ -139,19 +215,23 @@ function App() {
           enablePan={true}
           enableDamping
           dampingFactor={0.12}
-          // Prevent orbit from eating the first tap on mobile when possible
           makeDefault
         />
       </Canvas>
 
-      <HUD
-        state={state}
-        selectedUnitId={selectedUnitId}
-        showTech={showTech}
-        onToggleTech={() => setShowTech((v) => !v)}
-        onEndTurn={handleEndTurn}
-        onResearch={handleResearch}
-      />
+      {started && (
+        <>
+          <HUD
+            state={state}
+            selectedUnitId={selectedUnitId}
+            showTech={showTech}
+            onToggleTech={() => setShowTech((v) => !v)}
+            onEndTurn={handleEndTurn}
+            onResearch={handleResearch}
+          />
+          <Toast message={toast} onDone={() => setToast(null)} />
+        </>
+      )}
     </div>
   )
 }
