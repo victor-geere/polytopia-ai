@@ -1,9 +1,40 @@
+import { useState } from 'react'
+import type { AiConfig, AiProvider } from '../../game/aiCompact'
+
 interface SplashProps {
-  onStart: () => void
+  onStart: (config: { mode: 'pass-and-play' | 'vs-ai'; ai?: AiConfig }) => void
   yourTribe: string
 }
 
+const PROVIDERS: { id: AiProvider; label: string }[] = [
+  { id: 'deepseek', label: 'DeepSeek' },
+  { id: 'openrouter', label: 'OpenRouter' },
+  { id: 'ai21', label: 'AI21' },
+  { id: 'huggingface', label: 'Hugging Face' },
+]
+
 export function Splash({ onStart, yourTribe }: SplashProps) {
+  const [playMode, setPlayMode] = useState<'pass-and-play' | 'vs-ai'>('pass-and-play')
+  const [provider, setProvider] = useState<AiProvider>('deepseek')
+  const [apiKey, setApiKey] = useState('')
+
+  const deepseekReady = provider === 'deepseek' && apiKey.trim().length > 0
+  const canStartAi = playMode === 'vs-ai' && deepseekReady
+  const canStart =
+    playMode === 'pass-and-play' || canStartAi
+
+  const handleStart = () => {
+    if (playMode === 'pass-and-play') {
+      onStart({ mode: 'pass-and-play' })
+      return
+    }
+    if (!canStartAi) return
+    onStart({
+      mode: 'vs-ai',
+      ai: { provider: 'deepseek', apiKey: apiKey.trim() },
+    })
+  }
+
   return (
     <div
       style={{
@@ -19,19 +50,13 @@ export function Splash({ onStart, yourTribe }: SplashProps) {
         fontFamily: 'system-ui, -apple-system, sans-serif',
         color: '#f0f0f0',
         textAlign: 'center',
+        overflowY: 'auto',
       }}
     >
-      <div
-        style={{
-          fontSize: 28,
-          fontWeight: 800,
-          letterSpacing: 1,
-          marginBottom: 8,
-        }}
-      >
+      <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: 1, marginBottom: 8 }}>
         Polytopia 3D
       </div>
-      <div style={{ fontSize: 14, opacity: 0.7, marginBottom: 28 }}>
+      <div style={{ fontSize: 14, opacity: 0.7, marginBottom: 20 }}>
         A minimal 4X strategy experiment
       </div>
 
@@ -41,45 +66,152 @@ export function Splash({ onStart, yourTribe }: SplashProps) {
           border: '1px solid rgba(255,255,255,0.12)',
           borderRadius: 14,
           padding: '18px 22px',
-          maxWidth: 340,
-          marginBottom: 28,
+          maxWidth: 360,
+          width: '100%',
+          marginBottom: 20,
           lineHeight: 1.5,
           fontSize: 14,
+          textAlign: 'left',
         }}
       >
-        <div style={{ fontWeight: 700, marginBottom: 8, color: '#ffd700' }}>
-          Pass-and-play
+        <div style={{ fontWeight: 700, marginBottom: 10, color: '#ffd700', textAlign: 'center' }}>
+          Game mode
         </div>
-        <div style={{ opacity: 0.9 }}>
-          This build is <strong>local pass-and-play</strong>. Two tribes share the
-          same device — when one player ends their turn, hand the phone/tablet to
-          the other.
-        </div>
-        <div style={{ marginTop: 12, opacity: 0.85 }}>
-          You start as{' '}
-          <span style={{ color: '#ffd700', fontWeight: 700 }}>
-            {yourTribe.toUpperCase()}
+
+        <label style={radioRow}>
+          <input
+            type="radio"
+            name="mode"
+            checked={playMode === 'pass-and-play'}
+            onChange={() => setPlayMode('pass-and-play')}
+          />
+          <span>
+            <strong>Pass-and-play</strong>
+            <div style={{ fontSize: 12, opacity: 0.75 }}>
+              Two tribes on one device. Hand off after End Turn.
+            </div>
           </span>
-          .
+        </label>
+
+        <label style={{ ...radioRow, marginTop: 10 }}>
+          <input
+            type="radio"
+            name="mode"
+            checked={playMode === 'vs-ai'}
+            onChange={() => setPlayMode('vs-ai')}
+          />
+          <span>
+            <strong>vs AI</strong>
+            <div style={{ fontSize: 12, opacity: 0.75 }}>
+              You play as {yourTribe}; the other tribe is controlled by an LLM.
+            </div>
+          </span>
+        </label>
+
+        {playMode === 'vs-ai' && (
+          <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+            <label style={{ display: 'block', fontSize: 13, marginBottom: 6, opacity: 0.9 }}>
+              AI provider
+            </label>
+            <select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value as AiProvider)}
+              style={selectStyle}
+            >
+              {PROVIDERS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+
+            {provider === 'deepseek' ? (
+              <div style={{ marginTop: 12 }}>
+                <label style={{ display: 'block', fontSize: 13, marginBottom: 6, opacity: 0.9 }}>
+                  DeepSeek API key
+                </label>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  placeholder="sk-…"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  style={inputStyle}
+                />
+                <div style={{ fontSize: 11, opacity: 0.55, marginTop: 6 }}>
+                  Key stays in this browser session only. See docs/spec/ai.md.
+                </div>
+              </div>
+            ) : (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  background: 'rgba(255,180,60,0.12)',
+                  border: '1px solid rgba(255,180,60,0.35)',
+                  fontSize: 13,
+                  color: '#ffc866',
+                }}
+              >
+                Not yet available
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{ marginTop: 14, fontSize: 13, opacity: 0.85, textAlign: 'center' }}>
+          You start as{' '}
+          <span style={{ color: '#ffd700', fontWeight: 700 }}>{yourTribe.toUpperCase()}</span>.
         </div>
       </div>
 
       <button
-        onClick={onStart}
+        onClick={handleStart}
+        disabled={!canStart}
         style={{
           padding: '14px 36px',
           fontSize: 17,
           fontWeight: 700,
-          background: '#3d8b5e',
+          background: canStart ? '#3d8b5e' : '#444',
           color: 'white',
           border: 'none',
           borderRadius: 12,
-          cursor: 'pointer',
-          boxShadow: '0 6px 20px rgba(61,139,94,0.4)',
+          cursor: canStart ? 'pointer' : 'not-allowed',
+          boxShadow: canStart ? '0 6px 20px rgba(61,139,94,0.4)' : 'none',
+          opacity: canStart ? 1 : 0.7,
         }}
       >
         Start Game
       </button>
     </div>
   )
+}
+
+const radioRow: React.CSSProperties = {
+  display: 'flex',
+  gap: 10,
+  alignItems: 'flex-start',
+  cursor: 'pointer',
+}
+
+const selectStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '10px 12px',
+  borderRadius: 8,
+  border: '1px solid rgba(255,255,255,0.2)',
+  background: '#12121f',
+  color: '#f0f0f0',
+  fontSize: 14,
+}
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  boxSizing: 'border-box',
+  padding: '10px 12px',
+  borderRadius: 8,
+  border: '1px solid rgba(255,255,255,0.2)',
+  background: '#12121f',
+  color: '#f0f0f0',
+  fontSize: 14,
 }

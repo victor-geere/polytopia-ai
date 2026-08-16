@@ -4,6 +4,7 @@ import { Suspense, useState, useCallback, useEffect, useRef } from 'react'
 import { createInitialState, endTurn, researchTech } from './game'
 import { findPath, isReachable, chebyshev } from './game/pathfinding'
 import { resolveCombat, canAttack } from './game/combat'
+import type { AiConfig } from './game/aiCompact'
 import { PolytopiaWorld } from './components/World/PolytopiaWorld'
 import { CameraFocus } from './components/World/CameraFocus'
 import { HUD } from './components/UI/HUD'
@@ -30,12 +31,17 @@ function App() {
   const [started, setStarted] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [focusKey, setFocusKey] = useState(0)
+  const [playMode, setPlayMode] = useState<'pass-and-play' | 'vs-ai'>('pass-and-play')
+  const [aiConfig, setAiConfig] = useState<AiConfig | null>(null)
   const prevPlayerIndex = useRef(0)
 
   const currentPlayer = state.players[state.currentPlayerIndex]
   const yourTribeName = TRIBE_NAMES[currentPlayer.tribe] ?? currentPlayer.tribe
+  // Human is always player 0 (Imperius) in vs-ai for now
+  const humanTribe = state.players[0]?.tribe
+  const isAiTurn =
+    playMode === 'vs-ai' && currentPlayer.tribe !== humanTribe && !state.gameOver
 
-  // Guide toast + camera focus when turn / player changes
   useEffect(() => {
     if (!started) return
 
@@ -46,17 +52,30 @@ function App() {
 
     const tribeLabel = TRIBE_NAMES[currentPlayer.tribe] ?? currentPlayer.tribe
     if (state.currentPlayerIndex !== prevPlayerIndex.current || state.turn === 1) {
-      setToast(
-        `You are ${tribeLabel.toUpperCase()}. Tap your unit, then tap a gold tile to move.`
-      )
+      if (playMode === 'vs-ai' && currentPlayer.tribe !== humanTribe) {
+        setToast('AI turn — thinking… (runner not wired yet; use End Turn to skip)')
+      } else {
+        setToast(
+          `You are ${tribeLabel.toUpperCase()}. Tap your unit, then tap a gold tile to move.`
+        )
+      }
       setFocusKey((k) => k + 1)
     }
     prevPlayerIndex.current = state.currentPlayerIndex
-  }, [started, state.currentPlayerIndex, state.turn, state.gameOver, state.winner, currentPlayer.tribe])
+  }, [
+    started,
+    state.currentPlayerIndex,
+    state.turn,
+    state.gameOver,
+    state.winner,
+    currentPlayer.tribe,
+    playMode,
+    humanTribe,
+  ])
 
   const tryMoveOrAttack = useCallback(
     (targetX: number, targetY: number) => {
-      if (!selectedUnitId || state.gameOver) return
+      if (isAiTurn || !selectedUnitId || state.gameOver) return
       const unit = state.units[selectedUnitId]
       if (!unit || unit.tribe !== currentPlayer.tribe || unit.acted) return
 
@@ -121,11 +140,12 @@ function App() {
       setSelectedUnitId(null)
       setToast('Moved. Tap End Turn when finished.')
     },
-    [selectedUnitId, state, currentPlayer]
+    [selectedUnitId, state, currentPlayer, isAiTurn]
   )
 
   const handleSelectUnit = useCallback(
     (id: string | null) => {
+      if (isAiTurn) return
       if (!id) {
         setSelectedUnitId(null)
         return
@@ -143,7 +163,7 @@ function App() {
       setSelectedUnitId(id)
       setToast('Gold tiles show where you can move. Tap one to move.')
     },
-    [state.units, currentPlayer.tribe]
+    [state.units, currentPlayer.tribe, isAiTurn]
   )
 
   const handleEndTurn = () => {
@@ -153,6 +173,7 @@ function App() {
   }
 
   const handleResearch = (techId: TechId) => {
+    if (isAiTurn) return
     setState((prev) => {
       const next = researchTech(prev, prev.currentPlayerIndex, techId)
       if (next) setToast('Technology researched!')
@@ -161,11 +182,27 @@ function App() {
     })
   }
 
-  const handleStart = () => {
+  const handleStart = (config: {
+    mode: 'pass-and-play' | 'vs-ai'
+    ai?: AiConfig
+  }) => {
+    setPlayMode(config.mode)
+    setAiConfig(config.ai ?? null)
+    // Keep key in session only
+    if (config.ai?.apiKey) {
+      try {
+        sessionStorage.setItem('polytopia_ai_provider', config.ai.provider)
+        sessionStorage.setItem('polytopia_ai_key', config.ai.apiKey)
+      } catch {
+        /* ignore */
+      }
+    }
     setStarted(true)
     setFocusKey((k) => k + 1)
     setToast(
-      `You are ${yourTribeName.toUpperCase()}. Tap your unit, then a gold tile to move.`
+      config.mode === 'vs-ai'
+        ? `You are ${TRIBE_NAMES[humanTribe] ?? humanTribe}. AI opponent ready (${config.ai?.provider}).`
+        : `You are ${yourTribeName.toUpperCase()}. Tap your unit, then a gold tile to move.`
     )
   }
 
@@ -176,7 +213,7 @@ function App() {
       {!started && (
         <Splash
           onStart={handleStart}
-          yourTribe={yourTribeName}
+          yourTribe={TRIBE_NAMES[humanTribe] ?? 'Imperius'}
         />
       )}
 
@@ -195,7 +232,7 @@ function App() {
           alpha: false,
         }}
         style={{ width: '100%', height: '100%' }}
-        onPointerMissed={() => setSelectedUnitId(null)}
+        onPointerMissed={() => !isAiTurn && setSelectedUnitId(null)}
       >
         <color attach="background" args={['#0f1420']} />
         <ambientLight intensity={0.55} />
@@ -230,11 +267,13 @@ function App() {
             state={state}
             selectedUnitId={selectedUnitId}
             showTech={showTech}
-            onToggleTech={() => setShowTech((v) => !v)}
+            onToggleTech={() => !isAiTurn && setShowTech((v) => !v)}
             onEndTurn={handleEndTurn}
             onResearch={handleResearch}
           />
           <Toast message={toast} onDone={() => setToast(null)} />
+          {/* aiConfig reserved for upcoming DeepSeek turn runner */}
+          {aiConfig && isAiTurn ? null : null}
         </>
       )}
     </div>
