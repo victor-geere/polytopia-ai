@@ -35,16 +35,33 @@ function difficultySettings(d: DifficultyLevel): { startingStars: number; maxTur
   }
 }
 
+/**
+ * ?autoplay=<ms> — milliseconds between auto turns.
+ * 1000 = 1 second per turn. 0 or omitted = disabled.
+ * Legacy: autoplay=1 is treated as 500ms for convenience.
+ */
 function readQuery() {
-  if (typeof window === 'undefined') return { autoplay: false, winner: null as string | null }
+  if (typeof window === 'undefined') {
+    return { autoplayMs: 0, winner: null as string | null }
+  }
   const q = new URLSearchParams(window.location.search)
+  const raw = q.get('autoplay')
+  let autoplayMs = 0
+  if (raw !== null && raw !== '') {
+    const n = Number(raw)
+    if (Number.isFinite(n) && n > 0) {
+      // Back-compat: bare "1" meant "on"; treat as 500ms
+      autoplayMs = n === 1 ? 500 : Math.floor(n)
+    }
+  }
   return {
-    autoplay: q.get('autoplay') === '1',
+    autoplayMs,
     winner: q.get('winner'),
   }
 }
 
 const QUERY = readQuery()
+const AUTOPLAY = QUERY.autoplayMs > 0
 
 function forceVictoryState(winner: TribeId): GameState {
   const s = createInitialState({
@@ -78,28 +95,28 @@ function App() {
       return forceVictoryState(QUERY.winner)
     }
     return createInitialState({
-      mode: QUERY.autoplay ? 'domination' : 'perfection',
-      mapWidth: QUERY.autoplay ? 6 : 16,
-      mapHeight: QUERY.autoplay ? 6 : 16,
+      mode: AUTOPLAY ? 'domination' : 'perfection',
+      mapWidth: AUTOPLAY ? 6 : 16,
+      mapHeight: AUTOPLAY ? 6 : 16,
       tribes: ['imperius', 'bardur'],
     })
   })
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null)
   const [showTech, setShowTech] = useState(false)
-  const [started, setStarted] = useState(QUERY.autoplay || !!QUERY.winner)
+  const [started, setStarted] = useState(AUTOPLAY || !!QUERY.winner)
   const [toast, setToast] = useState<string | null>(
     QUERY.winner
       ? `Game over — ${QUERY.winner.toUpperCase()} wins! Enemy defeated.`
-      : QUERY.autoplay
-        ? 'Autoplay mock duel — both tribes use local heuristic…'
+      : AUTOPLAY
+        ? `Autoplay mock duel · ${QUERY.autoplayMs}ms/turn`
         : null
   )
   const [focusKey, setFocusKey] = useState(0)
   const [playMode, setPlayMode] = useState<'pass-and-play' | 'vs-ai'>(
-    QUERY.autoplay ? 'vs-ai' : 'pass-and-play'
+    AUTOPLAY ? 'vs-ai' : 'pass-and-play'
   )
   const [aiConfig, setAiConfig] = useState<AiConfig | null>(
-    QUERY.autoplay ? { provider: 'mock', apiKey: 'mock' } : null
+    AUTOPLAY ? { provider: 'mock', apiKey: 'mock' } : null
   )
   const [aiBusy, setAiBusy] = useState(false)
   const prevPlayerIndex = useRef(0)
@@ -113,10 +130,10 @@ function App() {
     !state.gameOver &&
     playMode === 'vs-ai' &&
     !!aiConfig &&
-    (QUERY.autoplay || currentPlayer.tribe !== humanTribe)
+    (AUTOPLAY || currentPlayer.tribe !== humanTribe)
 
   useEffect(() => {
-    if (!QUERY.autoplay || QUERY.winner) return
+    if (!AUTOPLAY || QUERY.winner) return
     setState((prev) => {
       const tiles = prev.tiles.map((row) =>
         row.map((t) => ({
@@ -138,8 +155,8 @@ function App() {
     if (state.currentPlayerIndex !== prevPlayerIndex.current || state.turn === 1) {
       if (isAiTurn) {
         setToast(
-          QUERY.autoplay
-            ? `Autoplay: ${tribeLabel} (mock) · turn ${state.turn}`
+          AUTOPLAY
+            ? `Autoplay: ${tribeLabel} · turn ${state.turn} · ${QUERY.autoplayMs}ms`
             : `AI (${aiConfig?.provider ?? 'llm'}) is thinking…`
         )
       } else {
@@ -167,14 +184,18 @@ function App() {
 
     const playerIndex = state.currentPlayerIndex
     const tribe = state.players[playerIndex].tribe
+    const delayMs = AUTOPLAY ? QUERY.autoplayMs : 0
 
-    ;(async () => {
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
+      if (cancelled) return
       try {
         const snapshot = stateRef.current
         const actions =
           aiConfig.provider === 'mock'
             ? mockHeuristicActions(snapshot, tribe)
             : await requestAiActions(snapshot, tribe, aiConfig)
+        if (cancelled) return
         const { state: next, log } = applyAiActions(snapshot, actions, playerIndex)
         setState(next)
         setSelectedUnitId(null)
@@ -184,14 +205,23 @@ function App() {
           setToast(`${TRIBE_NAMES[tribe] ?? tribe}: ${summary}`)
         }
       } catch (err) {
+        if (cancelled) return
         const msg = err instanceof Error ? err.message : 'AI failed'
         setToast(`AI error: ${msg.slice(0, 100)}`)
         setState((prev) => endTurn(prev))
       } finally {
-        runningRef.current = false
-        setAiBusy(false)
+        if (!cancelled) {
+          runningRef.current = false
+          setAiBusy(false)
+        }
       }
-    })()
+    }, delayMs)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+      runningRef.current = false
+    }
   }, [started, isAiTurn, aiConfig, state.currentPlayerIndex, state.turn, state.gameOver])
 
   const tryMoveOrAttack = useCallback(
