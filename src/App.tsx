@@ -1,7 +1,13 @@
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { Suspense, useState, useCallback, useEffect, useRef } from 'react'
-import { createInitialState, endTurn, researchTech, trainUnit } from './game'
+import {
+  createInitialState,
+  endTurn,
+  researchTech,
+  trainUnit,
+  checkWinConditions,
+} from './game'
 import { findPath, isReachable, chebyshev } from './game/pathfinding'
 import { resolveCombat, canAttack } from './game/combat'
 import { isRangedUnit } from './game/units'
@@ -30,46 +36,62 @@ function difficultySettings(d: DifficultyLevel): { startingStars: number; maxTur
   }
 }
 
+const AUTOPLAY =
+  typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).get('autoplay') === '1'
+
 function App() {
   const [state, setState] = useState<GameState>(() =>
     createInitialState({
-      mode: 'perfection',
-      mapWidth: 16,
-      mapHeight: 16,
+      mode: AUTOPLAY ? 'domination' : 'perfection',
+      mapWidth: AUTOPLAY ? 8 : 16,
+      mapHeight: AUTOPLAY ? 8 : 16,
       tribes: ['imperius', 'bardur'],
     })
   )
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null)
   const [showTech, setShowTech] = useState(false)
-  const [started, setStarted] = useState(false)
-  const [toast, setToast] = useState<string | null>(null)
+  const [started, setStarted] = useState(AUTOPLAY)
+  const [toast, setToast] = useState<string | null>(
+    AUTOPLAY ? 'Autoplay mock duel — both tribes use local heuristic…' : null
+  )
   const [focusKey, setFocusKey] = useState(0)
-  const [playMode, setPlayMode] = useState<'pass-and-play' | 'vs-ai'>('pass-and-play')
-  const [aiConfig, setAiConfig] = useState<AiConfig | null>(null)
+  const [playMode, setPlayMode] = useState<'pass-and-play' | 'vs-ai'>(
+    AUTOPLAY ? 'vs-ai' : 'pass-and-play'
+  )
+  const [aiConfig, setAiConfig] = useState<AiConfig | null>(
+    AUTOPLAY ? { provider: 'mock', apiKey: 'mock' } : null
+  )
   const [aiBusy, setAiBusy] = useState(false)
   const prevPlayerIndex = useRef(0)
-  const aiAbort = useRef<AbortController | null>(null)
   const stateRef = useRef(state)
   stateRef.current = state
 
   const currentPlayer = state.players[state.currentPlayerIndex]
   const humanTribe = state.players[0]?.tribe
+  // Autoplay: both tribes are driven by mock AI
   const isAiTurn =
-    playMode === 'vs-ai' && currentPlayer.tribe !== humanTribe && !state.gameOver
+    !state.gameOver &&
+    playMode === 'vs-ai' &&
+    !!aiConfig &&
+    (AUTOPLAY || currentPlayer.tribe !== humanTribe)
 
-  // Toast + camera on turn change
   useEffect(() => {
     if (!started) return
 
     if (state.gameOver) {
-      setToast(`Game over — ${state.winner?.toUpperCase()} wins!`)
+      setToast(`Game over — ${state.winner?.toUpperCase()} wins! Enemy defeated.`)
       return
     }
 
     const tribeLabel = TRIBE_NAMES[currentPlayer.tribe] ?? currentPlayer.tribe
     if (state.currentPlayerIndex !== prevPlayerIndex.current || state.turn === 1) {
-      if (playMode === 'vs-ai' && currentPlayer.tribe !== humanTribe) {
-        setToast(`AI (${aiConfig?.provider ?? 'llm'}) is thinking…`)
+      if (isAiTurn) {
+        setToast(
+          AUTOPLAY
+            ? `Autoplay: ${tribeLabel} (mock) thinking… turn ${state.turn}`
+            : `AI (${aiConfig?.provider ?? 'llm'}) is thinking…`
+        )
       } else {
         setToast(
           `You are ${tribeLabel.toUpperCase()}. Tap your unit, then a highlighted tile to move.`
@@ -85,19 +107,16 @@ function App() {
     state.gameOver,
     state.winner,
     currentPlayer.tribe,
-    playMode,
-    humanTribe,
+    isAiTurn,
     aiConfig?.provider,
   ])
 
-  // Run AI turn automatically
   useEffect(() => {
     if (!started || !isAiTurn || !aiConfig || aiBusy || state.gameOver) return
 
     const playerIndex = state.currentPlayerIndex
     const tribe = state.players[playerIndex].tribe
     const ctrl = new AbortController()
-    aiAbort.current = ctrl
     setAiBusy(true)
 
     ;(async () => {
@@ -110,7 +129,9 @@ function App() {
         setSelectedUnitId(null)
         setShowTech(false)
         const summary = log.filter((l) => !l.startsWith('skip')).slice(0, 4).join(' · ') || 'end'
-        setToast(`AI turn done: ${summary}`)
+        if (!next.gameOver) {
+          setToast(`${TRIBE_NAMES[tribe] ?? tribe}: ${summary}`)
+        }
       } catch (err) {
         if (ctrl.signal.aborted) return
         const msg = err instanceof Error ? err.message : 'AI request failed'
@@ -169,20 +190,12 @@ function App() {
                 ? { ...p, units: p.units.filter((id) => id !== defender.id) }
                 : p
             )
-            setToast(
-              isRangedUnit(unit.type) && dist > 1
-                ? 'Ranged shot — enemy defeated!'
-                : 'Enemy unit defeated!'
-            )
+            setToast('Enemy unit defeated!')
           } else {
             units[defender.id] = defender
-            setToast(
-              isRangedUnit(unit.type) && dist > 1
-                ? `Ranged hit! Enemy HP: ${defender.health} (no counter)`
-                : `Hit! Enemy HP: ${defender.health}`
-            )
+            setToast(`Hit! Enemy HP: ${defender.health}`)
           }
-          return { ...prev, units, players }
+          return checkWinConditions({ ...prev, units, players })
         })
         setSelectedUnitId(null)
         return
@@ -233,11 +246,7 @@ function App() {
         return
       }
       setSelectedUnitId(id)
-      if (isRangedUnit(unit.type)) {
-        setToast(`Archer selected (range ${unit.range}). Highlighted tiles = move, red = attack.`)
-      } else {
-        setToast('Highlighted tiles show where you can move. Tap one to move.')
-      }
+      setToast('Highlighted tiles show where you can move. Tap one to move.')
     },
     [state.units, currentPlayer.tribe, isAiTurn, aiBusy]
   )
@@ -253,15 +262,8 @@ function App() {
     if (isAiTurn || aiBusy) return
     setState((prev) => {
       const next = researchTech(prev, prev.currentPlayerIndex, techId)
-      if (next) {
-        setToast(
-          techId === 'archery'
-            ? 'Archery researched! Train Archers from the Train panel (☆3, range 2).'
-            : 'Technology researched!'
-        )
-      } else {
-        setToast('Cannot research that (cost or prerequisites).')
-      }
+      if (next) setToast('Technology researched!')
+      else setToast('Cannot research that (cost or prerequisites).')
       return next ?? prev
     })
   }
@@ -270,15 +272,8 @@ function App() {
     if (isAiTurn || aiBusy || state.gameOver) return
     setState((prev) => {
       const next = trainUnit(prev, prev.currentPlayerIndex, unitType)
-      if (next) {
-        setToast(
-          unitType === 'archer'
-            ? 'Archer trained at your capital (above the spire). Acts next turn.'
-            : `${unitType} trained at your capital (above the spire).`
-        )
-      } else {
-        setToast('Cannot train (stars or tech).')
-      }
+      if (next) setToast(`${unitType} trained at your capital.`)
+      else setToast('Cannot train (stars or tech).')
       return next ?? prev
     })
   }
@@ -288,7 +283,7 @@ function App() {
     const size = config.boardSize
 
     const next = createInitialState({
-      mode: 'perfection',
+      mode: config.mode === 'vs-ai' ? 'domination' : 'perfection',
       mapWidth: size,
       mapHeight: size,
       tribes: ['imperius', 'bardur'],
@@ -300,14 +295,6 @@ function App() {
     setState(next)
     setPlayMode(config.mode)
     setAiConfig(config.ai ?? null)
-    if (config.ai?.apiKey) {
-      try {
-        sessionStorage.setItem('polytopia_ai_provider', config.ai.provider)
-        sessionStorage.setItem('polytopia_ai_key', config.ai.apiKey)
-      } catch {
-        /* ignore */
-      }
-    }
     setSelectedUnitId(null)
     setShowTech(false)
     setAiBusy(false)
@@ -316,8 +303,8 @@ function App() {
     const tribe = TRIBE_NAMES[next.players[0].tribe] ?? next.players[0].tribe
     setToast(
       config.mode === 'vs-ai'
-        ? `You are ${tribe}. ${size}×${size}, ${config.difficulty}. AI: ${config.ai?.provider}.`
-        : `You are ${tribe.toUpperCase()}. ${size}×${size}, ${config.difficulty}. Tap a unit to move.`
+        ? `You are ${tribe}. ${size}×${size}. AI: ${config.ai?.provider}.`
+        : `You are ${tribe.toUpperCase()}. ${size}×${size}. Tap a unit to move.`
     )
   }
 
