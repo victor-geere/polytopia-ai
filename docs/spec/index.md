@@ -7,6 +7,8 @@ This folder contains a structured **prompt tree** for implementing a mobile-frie
 
 The full machine-readable structure lives in [`prompt-tree.json`](./prompt-tree.json).
 
+**AI opponent:** see [`ai.md`](./ai.md) — compact board/state payload, DeepSeek prompt contract, and provider matrix (OpenRouter / AI21 / Hugging Face planned).
+
 ---
 
 ## Phase 1 — Foundation
@@ -68,6 +70,16 @@ HUD, mobile controls, performance polish, and final Vercel deployment.
 | 6-1 | HUD, Tech Tree UI & Overlays | [6-1-hud-ui.md](./6-1-hud-ui.md) |
 | 6-2 | Mobile Touch Controls | [6-2-mobile-controls.md](./6-2-mobile-controls.md) |
 | 6-3 | Final Polish & Vercel Deployment | [6-3-vercel-deploy.md](./6-3-vercel-deploy.md) |
+
+---
+
+## AI enemy (LLM opponent)
+
+| Doc | Description |
+|-----|-------------|
+| [ai.md](./ai.md) | AI turn flow, compact `BOARD` (rows×columns of cell blocks) + `STATE`, DeepSeek prompt/actions, provider matrix |
+
+Serializer helpers live in `src/game/aiCompact.ts`. Splash collects provider + DeepSeek API key (other providers: “Not yet available”).
 
 ---
 
