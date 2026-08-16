@@ -9,13 +9,23 @@ import type { AiConfig } from './game/aiCompact'
 import { PolytopiaWorld } from './components/World/PolytopiaWorld'
 import { CameraFocus } from './components/World/CameraFocus'
 import { HUD } from './components/UI/HUD'
-import { Splash } from './components/UI/Splash'
-import { Toast } from './components/UI/Toast'
+import { Splash, type StartConfig, type DifficultyLevel } from './components/UI/Splash'
 import type { GameState, TechId, UnitType } from './game/types'
 
 const TRIBE_NAMES: Record<string, string> = {
   imperius: 'Imperius',
   bardur: 'Bardur',
+}
+
+function difficultySettings(d: DifficultyLevel): { startingStars: number; maxTurns: number } {
+  switch (d) {
+    case 'easy':
+      return { startingStars: 8, maxTurns: 40 }
+    case 'hard':
+      return { startingStars: 3, maxTurns: 25 }
+    default:
+      return { startingStars: 5, maxTurns: 30 }
+  }
 }
 
 function App() {
@@ -37,7 +47,6 @@ function App() {
   const prevPlayerIndex = useRef(0)
 
   const currentPlayer = state.players[state.currentPlayerIndex]
-  const yourTribeName = TRIBE_NAMES[currentPlayer.tribe] ?? currentPlayer.tribe
   const humanTribe = state.players[0]?.tribe
   const isAiTurn =
     playMode === 'vs-ai' && currentPlayer.tribe !== humanTribe && !state.gameOver
@@ -175,7 +184,7 @@ function App() {
       setSelectedUnitId(id)
       if (isRangedUnit(unit.type)) {
         setToast(
-          `Archer selected (range ${unit.range}). Gold = move, red = attack. Ranged shots take no counter-damage.`
+          `Archer selected (range ${unit.range}). Gold tiles = move, red = attack.`
         )
       } else {
         setToast('Gold tiles show where you can move. Tap one to move.')
@@ -224,10 +233,22 @@ function App() {
     })
   }
 
-  const handleStart = (config: {
-    mode: 'pass-and-play' | 'vs-ai'
-    ai?: AiConfig
-  }) => {
+  const handleStart = (config: StartConfig) => {
+    const { startingStars, maxTurns } = difficultySettings(config.difficulty)
+    const size = config.boardSize
+
+    const next = createInitialState({
+      mode: 'perfection',
+      mapWidth: size,
+      mapHeight: size,
+      tribes: ['imperius', 'bardur'],
+    })
+
+    // Apply difficulty: starting stars + max turns
+    next.maxTurns = maxTurns
+    next.players = next.players.map((p) => ({ ...p, stars: startingStars }))
+
+    setState(next)
     setPlayMode(config.mode)
     setAiConfig(config.ai ?? null)
     if (config.ai?.apiKey) {
@@ -238,16 +259,20 @@ function App() {
         /* ignore */
       }
     }
+    setSelectedUnitId(null)
+    setShowTech(false)
     setStarted(true)
     setFocusKey((k) => k + 1)
+    const tribe = TRIBE_NAMES[next.players[0].tribe] ?? next.players[0].tribe
     setToast(
       config.mode === 'vs-ai'
-        ? `You are ${TRIBE_NAMES[humanTribe] ?? humanTribe}. AI opponent ready (${config.ai?.provider}).`
-        : `You are ${yourTribeName.toUpperCase()}. Tap your unit, then a gold tile to move.`
+        ? `You are ${tribe}. ${size}×${size}, ${config.difficulty}. AI ready.`
+        : `You are ${tribe.toUpperCase()}. ${size}×${size}, ${config.difficulty}. Tap a unit to move.`
     )
   }
 
-  const camDist = 14
+  // Camera distance scales a bit with board size
+  const camDist = 8 + state.mapWidth * 0.4
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative', touchAction: 'none' }}>
@@ -263,7 +288,7 @@ function App() {
           position: [camDist * 0.7, camDist * 0.9, camDist * 0.7],
           fov: 50,
           near: 0.1,
-          far: 200,
+          far: 300,
         }}
         dpr={[1, 1.5]}
         performance={{ min: 0.5 }}
@@ -275,24 +300,17 @@ function App() {
         style={{ width: '100%', height: '100%' }}
         onPointerMissed={() => !isAiTurn && setSelectedUnitId(null)}
       >
-        {/* Cartoon-blue sky */}
         <color attach="background" args={['#5ec8f0']} />
-        <fog attach="fog" args={['#7ed4f5', 45, 90]} />
+        <fog attach="fog" args={['#7ed4f5', 45, 120]} />
 
-        {/* Soft fill so shadows aren't pure black */}
         <ambientLight intensity={0.45} color="#fff4e0" />
-
-        {/* Main sunlight — warm, high, slightly angled */}
         <directionalLight
           position={[18, 28, 12]}
           intensity={1.85}
           color="#fff2cc"
           castShadow={false}
         />
-        {/* Secondary sun bounce from opposite side */}
         <directionalLight position={[-8, 10, -6]} intensity={0.35} color="#a8d8ff" />
-
-        {/* Sky / ground hemisphere for cartoon outdoor feel */}
         <hemisphereLight args={['#87e0ff', '#6bc46b', 0.55]} />
 
         <Suspense fallback={null}>
@@ -307,8 +325,8 @@ function App() {
 
         <OrbitControls
           maxPolarAngle={Math.PI / 2.2}
-          minDistance={8}
-          maxDistance={40}
+          minDistance={6}
+          maxDistance={60}
           target={[0, 0, 0]}
           enablePan={true}
           enableDamping
@@ -318,19 +336,17 @@ function App() {
       </Canvas>
 
       {started && (
-        <>
-          <HUD
-            state={state}
-            selectedUnitId={selectedUnitId}
-            showTech={showTech}
-            onToggleTech={() => !isAiTurn && setShowTech((v) => !v)}
-            onEndTurn={handleEndTurn}
-            onResearch={handleResearch}
-            onTrain={handleTrain}
-          />
-          <Toast message={toast} onDone={() => setToast(null)} />
-          {aiConfig && isAiTurn ? null : null}
-        </>
+        <HUD
+          state={state}
+          selectedUnitId={selectedUnitId}
+          showTech={showTech}
+          onToggleTech={() => !isAiTurn && setShowTech((v) => !v)}
+          onEndTurn={handleEndTurn}
+          onResearch={handleResearch}
+          onTrain={handleTrain}
+          toast={toast}
+          onToastDone={() => setToast(null)}
+        />
       )}
     </div>
   )
