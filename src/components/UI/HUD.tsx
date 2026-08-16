@@ -1,6 +1,5 @@
 import type { GameState, TechId } from '../../game/types'
 import { TECH_TREE, canResearch, researchCost } from '../../game/techTree'
-import { researchTech } from '../../game/state'
 
 interface HUDProps {
   state: GameState

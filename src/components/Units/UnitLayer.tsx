@@ -1,5 +1,3 @@
-import { useMemo, useRef } from 'react'
-import * as THREE from 'three'
 import { RigidBody } from '@react-three/rapier'
 import type { GameState, Unit } from '../../game/types'
 

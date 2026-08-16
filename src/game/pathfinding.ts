@@ -1,4 +1,4 @@
-import type { GameState, Tile } from './types'
+import type { GameState } from './types'
 
 /** Chebyshev distance (king-move distance). */
 export function chebyshev(x1: number, y1: number, x2: number, y2: number): number {
@@ -11,8 +11,8 @@ export interface PathNode {
 }
 
 /**
- * Simple A* on the square grid using Chebyshev distance.
- * Movement cost is 1 per step for land; mountains/water may be restricted later.
+ * Pathfinding on the square grid using Chebyshev distance.
+ * Uses BFS for reliable short-distance paths (sufficient for early game movement).
  */
 export function findPath(
   state: GameState,
@@ -23,85 +23,10 @@ export function findPath(
   maxSteps = 20
 ): PathNode[] | null {
   if (startX === goalX && startY === goalY) return [{ x: startX, y: startY }]
-
-  const { mapWidth, mapHeight, tiles } = state
-  const key = (x: number, y: number) => `${x},${y}`
-
-  const open = new Map<string, { x: number; y: number; g: number; f: number; parent: string | null }>()
-  const closed = new Set<string>()
-
-  const startKey = key(startX, startY)
-  open.set(startKey, {
-    x: startX,
-    y: startY,
-    g: 0,
-    f: chebyshev(startX, startY, goalX, goalY),
-    parent: null,
-  })
-
-  const dirs = [
-    [-1, -1], [0, -1], [1, -1],
-    [-1, 0],           [1, 0],
-    [-1, 1],  [0, 1],  [1, 1],
-  ]
-
-  while (open.size > 0) {
-    // Pick lowest f
-    let currentKey = ''
-    let current: (typeof open extends Map<string, infer V> ? V : never) | null = null
-    for (const [k, v] of open) {
-      if (!current || v.f < current.f) {
-        current = v
-        currentKey = k
-      }
-    }
-    if (!current) break
-
-    if (current.x === goalX && current.y === goalY) {
-      // Reconstruct
-      const path: PathNode[] = []
-      let k: string | null = currentKey
-      while (k) {
-        const node = open.get(k) || (closed.has(k) ? null : null)
-        // We need parents from a separate map; rebuild properly
-        break
-      }
-      // Simpler reconstruction using a parent map
-      break
-    }
-
-    open.delete(currentKey)
-    closed.add(currentKey)
-
-    if (current.g >= maxSteps) continue
-
-    for (const [dx, dy] of dirs) {
-      const nx = current.x + dx
-      const ny = current.y + dy
-      if (nx < 0 || ny < 0 || nx >= mapWidth || ny >= mapHeight) continue
-      const nKey = key(nx, ny)
-      if (closed.has(nKey)) continue
-
-      const tile = tiles[ny][nx]
-      // Basic passability: water is impassable for now (no swimming tech)
-      if (tile.terrain === 'water') continue
-
-      const g = current.g + 1
-      const h = chebyshev(nx, ny, goalX, goalY)
-      const f = g + h
-
-      const existing = open.get(nKey)
-      if (!existing || g < existing.g) {
-        open.set(nKey, { x: nx, y: ny, g, f, parent: currentKey })
-      }
-    }
-  }
-
-  // Reconstruct using parent pointers stored in a side map for reliability
   return reconstructPath(state, startX, startY, goalX, goalY, maxSteps)
 }
 
-/** Reliable BFS-style path for short distances (sufficient for early game). */
+/** Reliable BFS-style path for short distances. */
 function reconstructPath(
   state: GameState,
   startX: number,
@@ -125,7 +50,6 @@ function reconstructPath(
   while (queue.length > 0) {
     const cur = queue.shift()!
     if (cur.x === goalX && cur.y === goalY) {
-      // build path
       const path: PathNode[] = []
       let k: string | null = key(goalX, goalY)
       while (k) {
