@@ -1,5 +1,6 @@
-import type { GameState, TechId } from '../../game/types'
+import type { GameState, TechId, UnitType } from '../../game/types'
 import { TECH_TREE, canResearch, researchCost } from '../../game/techTree'
+import { trainableUnits } from '../../game/units'
 
 interface HUDProps {
   state: GameState
@@ -8,6 +9,7 @@ interface HUDProps {
   onToggleTech: () => void
   onEndTurn: () => void
   onResearch: (techId: TechId) => void
+  onTrain: (unitType: UnitType) => void
 }
 
 export function HUD({
@@ -17,13 +19,15 @@ export function HUD({
   onToggleTech,
   onEndTurn,
   onResearch,
+  onTrain,
 }: HUDProps) {
   const player = state.players[state.currentPlayerIndex]
   const cityCount = player.cities.length
+  const trainList = trainableUnits(player.researched)
+  const selected = selectedUnitId ? state.units[selectedUnitId] : null
 
   return (
     <>
-      {/* Top bar */}
       <div
         style={{
           position: 'absolute',
@@ -42,17 +46,18 @@ export function HUD({
         }}
       >
         <div style={{ pointerEvents: 'auto' }}>
-          <div style={{ fontSize: 13, opacity: 0.8 }}>Turn {state.turn}{state.mode === 'perfection' ? ` / ${state.maxTurns}` : ''}</div>
+          <div style={{ fontSize: 13, opacity: 0.8 }}>
+            Turn {state.turn}
+            {state.mode === 'perfection' ? ` / ${state.maxTurns}` : ''}
+          </div>
           <div style={{ fontSize: 18, fontWeight: 700 }}>
-            {player.tribe.toUpperCase()} <span style={{ color: '#ffd700' }}>☆ {player.stars}</span>
+            {player.tribe.toUpperCase()}{' '}
+            <span style={{ color: '#ffd700' }}>☆ {player.stars}</span>
           </div>
         </div>
 
         <div style={{ display: 'flex', gap: 8, pointerEvents: 'auto' }}>
-          <button
-            onClick={onToggleTech}
-            style={btnStyle}
-          >
+          <button onClick={onToggleTech} style={btnStyle}>
             Tech
           </button>
           <button
@@ -65,8 +70,53 @@ export function HUD({
         </div>
       </div>
 
-      {/* Selected unit info */}
-      {selectedUnitId && state.units[selectedUnitId] && (
+      {/* Train panel — warriors + unlocked units (e.g. Archer after Archery) */}
+      {trainList.length > 0 && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 20,
+            right: 16,
+            background: 'rgba(0,0,0,0.8)',
+            color: '#eee',
+            padding: '10px 12px',
+            borderRadius: 10,
+            fontFamily: 'system-ui, sans-serif',
+            fontSize: 13,
+            zIndex: 10,
+            maxWidth: 200,
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 8, opacity: 0.85 }}>Train</div>
+          {trainList.map((u) => {
+            const canAfford = player.stars >= u.cost
+            return (
+              <button
+                key={u.type}
+                disabled={!canAfford || state.gameOver}
+                onClick={() => onTrain(u.type)}
+                style={{
+                  ...btnStyle,
+                  display: 'block',
+                  width: '100%',
+                  marginBottom: 6,
+                  background: canAfford ? (u.ranged ? '#6b4c9a' : '#3a3a5c') : '#444',
+                  cursor: canAfford ? 'pointer' : 'not-allowed',
+                  textAlign: 'left',
+                  fontSize: 12,
+                  padding: '8px 10px',
+                }}
+              >
+                {u.name}
+                {u.ranged ? ' 🏹' : ''} · ☆{u.cost}
+                {u.range > 1 ? ` · R${u.range}` : ''}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {selected && (
         <div
           style={{
             position: 'absolute',
@@ -81,13 +131,22 @@ export function HUD({
             zIndex: 10,
           }}
         >
-          <div style={{ fontWeight: 700 }}>{state.units[selectedUnitId].type.toUpperCase()}</div>
-          <div>HP {state.units[selectedUnitId].health}/{state.units[selectedUnitId].maxHealth}</div>
-          <div>Move {state.units[selectedUnitId].movement}/{state.units[selectedUnitId].maxMovement}</div>
+          <div style={{ fontWeight: 700 }}>
+            {selected.type.toUpperCase()}
+            {selected.range > 1 ? ' 🏹' : ''}
+          </div>
+          <div>
+            HP {selected.health}/{selected.maxHealth}
+          </div>
+          <div>
+            Move {selected.movement}/{selected.maxMovement}
+          </div>
+          <div>
+            Atk {selected.attack} · Def {selected.defense} · Range {selected.range}
+          </div>
         </div>
       )}
 
-      {/* Tech panel */}
       {showTech && (
         <div
           style={{
@@ -109,7 +168,9 @@ export function HUD({
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
             <strong>Technology</strong>
-            <button onClick={onToggleTech} style={{ ...btnStyle, padding: '2px 8px', fontSize: 12 }}>✕</button>
+            <button onClick={onToggleTech} style={{ ...btnStyle, padding: '2px 8px', fontSize: 12 }}>
+              ✕
+            </button>
           </div>
           {Object.values(TECH_TREE).map((tech) => {
             const owned = player.researched.includes(tech.id)
@@ -151,7 +212,6 @@ export function HUD({
         </div>
       )}
 
-      {/* Game over overlay */}
       {state.gameOver && (
         <div
           style={{

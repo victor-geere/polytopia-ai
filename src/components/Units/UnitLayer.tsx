@@ -1,5 +1,6 @@
 import { RigidBody } from '@react-three/rapier'
 import type { GameState, Unit } from '../../game/types'
+import { isRangedUnit } from '../../game/units'
 
 const TILE_SIZE = 1
 const TRIBE_COLORS: Record<string, string> = {
@@ -55,10 +56,10 @@ function UnitMesh({
   selected: boolean
   onSelect: () => void
 }) {
-  // Match TileGrid centering ( +0.5 offset )
   const wx = (unit.x - mapWidth / 2 + 0.5) * TILE_SIZE
   const wz = (unit.y - mapHeight / 2 + 0.5) * TILE_SIZE
   const color = TRIBE_COLORS[unit.tribe] ?? '#ffffff'
+  const ranged = isRangedUnit(unit.type)
 
   return (
     <RigidBody
@@ -73,9 +74,9 @@ function UnitMesh({
           onSelect()
         }}
       >
-        {/* Body */}
+        {/* Body — archers slightly thinner */}
         <mesh castShadow={false} position={[0, 0.15, 0]}>
-          <capsuleGeometry args={[0.28, 0.35, 4, 8]} />
+          <capsuleGeometry args={[ranged ? 0.2 : 0.28, ranged ? 0.4 : 0.35, 4, 8]} />
           <meshStandardMaterial
             color={selected ? '#ffffff' : color}
             flatShading
@@ -85,10 +86,16 @@ function UnitMesh({
         </mesh>
         {/* Head */}
         <mesh position={[0, 0.55, 0]}>
-          <sphereGeometry args={[0.18, 8, 8]} />
+          <sphereGeometry args={[0.16, 8, 8]} />
           <meshStandardMaterial color={color} flatShading />
         </mesh>
-        {/* Selection ring */}
+        {/* Bow marker for archers */}
+        {ranged && (
+          <mesh position={[0.22, 0.35, 0]} rotation={[0, 0, 0.3]}>
+            <torusGeometry args={[0.14, 0.03, 6, 10, Math.PI]} />
+            <meshStandardMaterial color="#8b5a2b" flatShading />
+          </mesh>
+        )}
         {selected && (
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
             <ringGeometry args={[0.4, 0.5, 16]} />

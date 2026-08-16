@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import * as THREE from 'three'
 import type { GameState } from '../../game/types'
 import { isReachable } from '../../game/pathfinding'
+import { enemyTilesInRange } from '../../game/combat'
 
 const TILE_SIZE = 1
 
@@ -12,9 +13,7 @@ interface Props {
 }
 
 /**
- * Invisible (but raycastable) plane that covers the whole map.
- * Converts 3D hit points into tile coordinates and forwards the click.
- * Also draws a simple reachable-tile highlight when a unit is selected.
+ * Raycast plane + movement (gold) and attack-range (red) highlights.
  */
 export function ClickableTiles({ state, selectedUnitId, onTileClick }: Props) {
   const { mapWidth, mapHeight } = state
@@ -39,11 +38,14 @@ export function ClickableTiles({ state, selectedUnitId, onTileClick }: Props) {
     return cells
   }, [selectedUnit, state, mapWidth, mapHeight])
 
+  const attackTargets = useMemo(() => {
+    if (!selectedUnit || selectedUnit.acted) return [] as { x: number; y: number }[]
+    return enemyTilesInRange(selectedUnit, state.units, mapWidth, mapHeight)
+  }, [selectedUnit, state.units, mapWidth, mapHeight])
+
   const handlePointerDown = (e: any) => {
-    // Only left click / primary touch
     e.stopPropagation()
     const point: THREE.Vector3 = e.point
-    // Inverse of the centering used in TileGrid / UnitLayer
     const tileX = Math.floor(point.x / TILE_SIZE + mapWidth / 2)
     const tileY = Math.floor(point.z / TILE_SIZE + mapHeight / 2)
     if (tileX < 0 || tileY < 0 || tileX >= mapWidth || tileY >= mapHeight) return
@@ -52,7 +54,6 @@ export function ClickableTiles({ state, selectedUnitId, onTileClick }: Props) {
 
   return (
     <group>
-      {/* Raycast plane — sits just above the tiles */}
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
         position={[0, 0.2, 0]}
@@ -62,13 +63,12 @@ export function ClickableTiles({ state, selectedUnitId, onTileClick }: Props) {
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      {/* Reachable tile highlights */}
       {reachable.map(({ x, y }) => {
         const wx = (x - mapWidth / 2 + 0.5) * TILE_SIZE
         const wz = (y - mapHeight / 2 + 0.5) * TILE_SIZE
         return (
           <mesh
-            key={`${x},${y}`}
+            key={`m-${x},${y}`}
             rotation={[-Math.PI / 2, 0, 0]}
             position={[wx, 0.28, wz]}
             onPointerDown={(e) => {
@@ -81,6 +81,31 @@ export function ClickableTiles({ state, selectedUnitId, onTileClick }: Props) {
               color="#ffd700"
               transparent
               opacity={0.35}
+              depthWrite={false}
+            />
+          </mesh>
+        )
+      })}
+
+      {/* Attack range — red rings under enemy tiles in range (esp. archers range 2) */}
+      {attackTargets.map(({ x, y }) => {
+        const wx = (x - mapWidth / 2 + 0.5) * TILE_SIZE
+        const wz = (y - mapHeight / 2 + 0.5) * TILE_SIZE
+        return (
+          <mesh
+            key={`a-${x},${y}`}
+            rotation={[-Math.PI / 2, 0, 0]}
+            position={[wx, 0.3, wz]}
+            onPointerDown={(e) => {
+              e.stopPropagation()
+              onTileClick(x, y)
+            }}
+          >
+            <ringGeometry args={[0.28, 0.42, 20]} />
+            <meshBasicMaterial
+              color="#e74c3c"
+              transparent
+              opacity={0.75}
               depthWrite={false}
             />
           </mesh>

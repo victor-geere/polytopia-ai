@@ -7,8 +7,10 @@ import type {
   Unit,
   City,
   TechId,
+  UnitType,
 } from './types'
 import { TRIBE_STARTING_TECH } from './techTree'
+import { createUnit, UNIT_STATS } from './units'
 
 let nextId = 1
 export function uid(prefix = 'id'): string {
@@ -21,7 +23,6 @@ export function createMap(width: number, height: number): Tile[][] {
   for (let y = 0; y < height; y++) {
     const row: Tile[] = []
     for (let x = 0; x < width; x++) {
-      // Very simple noise-like terrain
       const r = Math.random()
       let terrain: Tile['terrain'] = 'land'
       if (r < 0.18) terrain = 'water'
@@ -59,7 +60,6 @@ export function createInitialState(options: {
   const cities: Record<string, City> = {}
   const players: PlayerState[] = []
 
-  // Place capitals and starting warriors in roughly opposite corners / spread
   const startPositions = [
     { x: 2, y: 2 },
     { x: mapWidth - 3, y: mapHeight - 3 },
@@ -72,7 +72,6 @@ export function createInitialState(options: {
     const cityId = uid('city')
     const unitId = uid('unit')
 
-    // Clear terrain under capital
     tiles[pos.y][pos.x].terrain = 'land'
     tiles[pos.y][pos.x].building = 'city'
     tiles[pos.y][pos.x].owner = tribe
@@ -89,22 +88,7 @@ export function createInitialState(options: {
       starsPerTurn: tribe === 'luxidoor' ? 3 : 2,
     }
 
-    units[unitId] = {
-      id: unitId,
-      type: 'warrior',
-      tribe,
-      x: pos.x,
-      y: pos.y,
-      health: 10,
-      maxHealth: 10,
-      movement: 1,
-      maxMovement: 1,
-      attack: 2,
-      defense: 2,
-      range: 1,
-      veteran: false,
-      acted: false,
-    }
+    units[unitId] = createUnit('warrior', tribe, pos.x, pos.y, unitId)
 
     const startingTech = TRIBE_STARTING_TECH[tribe]
     players.push({
@@ -134,13 +118,11 @@ export function createInitialState(options: {
   }
 }
 
-/** Spend stars if possible. Returns new player state or null if insufficient. */
 export function spendStars(player: PlayerState, amount: number): PlayerState | null {
   if (player.stars < amount) return null
   return { ...player, stars: player.stars - amount }
 }
 
-/** Add income at the end of a player's turn. */
 export function applyIncome(state: GameState, playerIndex: number): GameState {
   const players = [...state.players]
   const player = { ...players[playerIndex] }
@@ -154,19 +136,17 @@ export function applyIncome(state: GameState, playerIndex: number): GameState {
   return { ...state, players }
 }
 
-/** End the current player's turn and advance. */
 export function endTurn(state: GameState): GameState {
   if (state.gameOver) return state
 
-  // Reset acted flags for the player who just finished
   const units = { ...state.units }
   const current = state.players[state.currentPlayerIndex]
-  for (const uid of current.units) {
-    if (units[uid]) {
-      units[uid] = {
-        ...units[uid],
+  for (const id of current.units) {
+    if (units[id]) {
+      units[id] = {
+        ...units[id],
         acted: false,
-        movement: units[uid].maxMovement,
+        movement: units[id].maxMovement,
       }
     }
   }
@@ -174,9 +154,7 @@ export function endTurn(state: GameState): GameState {
   let nextState: GameState = { ...state, units }
   nextState = applyIncome(nextState, state.currentPlayerIndex)
 
-  // Advance player
   let nextIndex = (state.currentPlayerIndex + 1) % state.players.length
-  // Skip dead players
   let safety = 0
   while (!nextState.players[nextIndex].isAlive && safety < state.players.length) {
     nextIndex = (nextIndex + 1) % state.players.length
@@ -191,9 +169,7 @@ export function endTurn(state: GameState): GameState {
     turn: newTurn,
   }
 
-  // Check win conditions
-  nextState = checkWinConditions(nextState)
-  return nextState
+  return checkWinConditions(nextState)
 }
 
 export function checkWinConditions(state: GameState): GameState {
@@ -208,7 +184,6 @@ export function checkWinConditions(state: GameState): GameState {
   }
 
   if (state.mode === 'perfection' && state.turn > state.maxTurns) {
-    // Highest score wins
     const sorted = [...state.players].sort((a, b) => b.score - a.score)
     return {
       ...state,
@@ -237,14 +212,13 @@ export function researchTech(
     ...player,
     stars: player.stars - cost,
     researched: [...player.researched, techId],
-    score: player.score + 50, // simple score for researching
+    score: player.score + 50,
   }
 
   return { ...state, players }
 }
 
 function researchCostSafe(techId: TechId, cityCount: number): number {
-  // local import avoided circular; duplicate small helper
   const baseCosts: Partial<Record<TechId, number>> = {
     climbing: 5, organization: 5, riding: 5, hunting: 5, fishing: 5,
     archery: 6, farming: 6, forestry: 6, mining: 6, roads: 6,
@@ -254,4 +228,76 @@ function researchCostSafe(techId: TechId, cityCount: number): number {
   }
   const base = baseCosts[techId] ?? 10
   return base + Math.max(0, cityCount - 1) * 2
+}
+
+/** Find an empty land tile adjacent to (or on) the city for spawning. */
+function findSpawnTile(
+  state: GameState,
+  city: City
+): { x: number; y: number } | null {
+  const occupied = new Set(
+    Object.values(state.units)
+      .filter((u) => u.health > 0)
+      .map((u) => `${u.x},${u.y}`)
+  )
+
+  const candidates: { x: number; y: number }[] = [{ x: city.x, y: city.y }]
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      if (dx === 0 && dy === 0) continue
+      candidates.push({ x: city.x + dx, y: city.y + dy })
+    }
+  }
+
+  for (const { x, y } of candidates) {
+    if (x < 0 || y < 0 || x >= state.mapWidth || y >= state.mapHeight) continue
+    const tile = state.tiles[y][x]
+    if (tile.terrain === 'water') continue
+    if (occupied.has(`${x},${y}`)) continue
+    return { x, y }
+  }
+  return null
+}
+
+/**
+ * Train a unit at the player's capital (or first city).
+ * Requires stars and tech for non-warrior units.
+ */
+export function trainUnit(
+  state: GameState,
+  playerIndex: number,
+  unitType: UnitType
+): GameState | null {
+  const player = state.players[playerIndex]
+  const stats = UNIT_STATS[unitType]
+  if (!stats || stats.cost <= 0) return null
+
+  if (stats.requiresTech && !player.researched.includes(stats.requiresTech as TechId)) {
+    return null
+  }
+  if (player.stars < stats.cost) return null
+
+  const cityId = player.cities[0]
+  const city = cityId ? state.cities[cityId] : null
+  if (!city) return null
+
+  const spawn = findSpawnTile(state, city)
+  if (!spawn) return null
+
+  const id = uid('unit')
+  const unit = createUnit(unitType, player.tribe, spawn.x, spawn.y, id)
+  // Newly trained units cannot act the turn they are built
+  unit.acted = true
+  unit.movement = 0
+
+  const units = { ...state.units, [id]: unit }
+  const players = [...state.players]
+  players[playerIndex] = {
+    ...player,
+    stars: player.stars - stats.cost,
+    units: [...player.units, id],
+    score: player.score + 10,
+  }
+
+  return { ...state, units, players }
 }
