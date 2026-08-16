@@ -1,16 +1,17 @@
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { Suspense, useState, useCallback, useEffect, useRef } from 'react'
-import { createInitialState, endTurn, researchTech } from './game'
+import { createInitialState, endTurn, researchTech, trainUnit } from './game'
 import { findPath, isReachable, chebyshev } from './game/pathfinding'
 import { resolveCombat, canAttack } from './game/combat'
+import { isRangedUnit } from './game/units'
 import type { AiConfig } from './game/aiCompact'
 import { PolytopiaWorld } from './components/World/PolytopiaWorld'
 import { CameraFocus } from './components/World/CameraFocus'
 import { HUD } from './components/UI/HUD'
 import { Splash } from './components/UI/Splash'
 import { Toast } from './components/UI/Toast'
-import type { GameState, TechId } from './game/types'
+import type { GameState, TechId, UnitType } from './game/types'
 
 const TRIBE_NAMES: Record<string, string> = {
   imperius: 'Imperius',
@@ -37,7 +38,6 @@ function App() {
 
   const currentPlayer = state.players[state.currentPlayerIndex]
   const yourTribeName = TRIBE_NAMES[currentPlayer.tribe] ?? currentPlayer.tribe
-  // Human is always player 0 (Imperius) in vs-ai for now
   const humanTribe = state.players[0]?.tribe
   const isAiTurn =
     playMode === 'vs-ai' && currentPlayer.tribe !== humanTribe && !state.gameOver
@@ -56,7 +56,7 @@ function App() {
         setToast('AI turn — thinking… (runner not wired yet; use End Turn to skip)')
       } else {
         setToast(
-          `You are ${tribeLabel.toUpperCase()}. Tap your unit, then tap a gold tile to move.`
+          `You are ${tribeLabel.toUpperCase()}. Tap your unit, then a gold tile to move.`
         )
       }
       setFocusKey((k) => k + 1)
@@ -87,12 +87,16 @@ function App() {
       if (occupant && occupant.tribe !== unit.tribe) {
         const dist = chebyshev(unit.x, unit.y, occupant.x, occupant.y)
         if (!canAttack(unit, occupant, dist)) {
-          setToast('Enemy is out of attack range.')
+          setToast(
+            isRangedUnit(unit.type)
+              ? `Out of range (this unit has range ${unit.range}).`
+              : 'Enemy is out of attack range.'
+          )
           return
         }
 
         const tile = state.tiles[occupant.y][occupant.x]
-        const { attacker, defender } = resolveCombat(unit, occupant, tile)
+        const { attacker, defender } = resolveCombat(unit, occupant, tile, dist)
 
         setState((prev) => {
           const units = { ...prev.units }
@@ -105,10 +109,18 @@ function App() {
                 ? { ...p, units: p.units.filter((id) => id !== defender.id) }
                 : p
             )
-            setToast('Enemy unit defeated!')
+            setToast(
+              isRangedUnit(unit.type) && dist > 1
+                ? 'Ranged shot — enemy defeated!'
+                : 'Enemy unit defeated!'
+            )
           } else {
             units[defender.id] = defender
-            setToast(`Hit! Enemy HP: ${defender.health}`)
+            setToast(
+              isRangedUnit(unit.type) && dist > 1
+                ? `Ranged hit! Enemy HP: ${defender.health} (no counter)`
+                : `Hit! Enemy HP: ${defender.health}`
+            )
           }
           return { ...prev, units, players }
         })
@@ -161,7 +173,13 @@ function App() {
         return
       }
       setSelectedUnitId(id)
-      setToast('Gold tiles show where you can move. Tap one to move.')
+      if (isRangedUnit(unit.type)) {
+        setToast(
+          `Archer selected (range ${unit.range}). Gold = move, red = attack. Ranged shots take no counter-damage.`
+        )
+      } else {
+        setToast('Gold tiles show where you can move. Tap one to move.')
+      }
     },
     [state.units, currentPlayer.tribe, isAiTurn]
   )
@@ -176,8 +194,32 @@ function App() {
     if (isAiTurn) return
     setState((prev) => {
       const next = researchTech(prev, prev.currentPlayerIndex, techId)
-      if (next) setToast('Technology researched!')
-      else setToast('Cannot research that (cost or prerequisites).')
+      if (next) {
+        setToast(
+          techId === 'archery'
+            ? 'Archery researched! Train Archers from the Train panel (☆3, range 2).'
+            : 'Technology researched!'
+        )
+      } else {
+        setToast('Cannot research that (cost or prerequisites).')
+      }
+      return next ?? prev
+    })
+  }
+
+  const handleTrain = (unitType: UnitType) => {
+    if (isAiTurn || state.gameOver) return
+    setState((prev) => {
+      const next = trainUnit(prev, prev.currentPlayerIndex, unitType)
+      if (next) {
+        setToast(
+          unitType === 'archer'
+            ? 'Archer trained near your capital! (Cannot act until next turn.)'
+            : `${unitType} trained near your capital.`
+        )
+      } else {
+        setToast('Cannot train (stars, tech, or no free tile near city).')
+      }
       return next ?? prev
     })
   }
@@ -188,7 +230,6 @@ function App() {
   }) => {
     setPlayMode(config.mode)
     setAiConfig(config.ai ?? null)
-    // Keep key in session only
     if (config.ai?.apiKey) {
       try {
         sessionStorage.setItem('polytopia_ai_provider', config.ai.provider)
@@ -270,9 +311,9 @@ function App() {
             onToggleTech={() => !isAiTurn && setShowTech((v) => !v)}
             onEndTurn={handleEndTurn}
             onResearch={handleResearch}
+            onTrain={handleTrain}
           />
           <Toast message={toast} onDone={() => setToast(null)} />
-          {/* aiConfig reserved for upcoming DeepSeek turn runner */}
           {aiConfig && isAiTurn ? null : null}
         </>
       )}

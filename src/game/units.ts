@@ -77,7 +77,7 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     type: 'knight',
     name: 'Knight',
     health: 15,
-    attack: 3.5 as unknown as number,
+    attack: 4,
     defense: 1,
     movement: 3,
     range: 1,
@@ -115,7 +115,7 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
     defense: 4,
     movement: 1,
     range: 1,
-    cost: 0, // produced via city level, not bought
+    cost: 0,
   },
   raft: {
     type: 'raft',
