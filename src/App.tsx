@@ -56,7 +56,7 @@ function App() {
         setToast('AI turn — thinking… (runner not wired yet; use End Turn to skip)')
       } else {
         setToast(
-          `You are ${tribeLabel.toUpperCase()}. Tap your unit, then a gold tile to move.`
+          `You are ${tribeLabel.toUpperCase()}. Tap your unit, then tap a gold tile to move.`
         )
       }
       setFocusKey((k) => k + 1)
@@ -275,10 +275,25 @@ function App() {
         style={{ width: '100%', height: '100%' }}
         onPointerMissed={() => !isAiTurn && setSelectedUnitId(null)}
       >
-        <color attach="background" args={['#0f1420']} />
-        <ambientLight intensity={0.55} />
-        <directionalLight position={[10, 20, 8]} intensity={1.25} />
-        <hemisphereLight args={['#87a0c0', '#2a3a2a', 0.35]} />
+        {/* Cartoon-blue sky */}
+        <color attach="background" args={['#5ec8f0']} />
+        <fog attach="fog" args={['#7ed4f5', 45, 90]} />
+
+        {/* Soft fill so shadows aren't pure black */}
+        <ambientLight intensity={0.45} color="#fff4e0" />
+
+        {/* Main sunlight — warm, high, slightly angled */}
+        <directionalLight
+          position={[18, 28, 12]}
+          intensity={1.85}
+          color="#fff2cc"
+          castShadow={false}
+        />
+        {/* Secondary sun bounce from opposite side */}
+        <directionalLight position={[-8, 10, -6]} intensity={0.35} color="#a8d8ff" />
+
+        {/* Sky / ground hemisphere for cartoon outdoor feel */}
+        <hemisphereLight args={['#87e0ff', '#6bc46b', 0.55]} />
 
         <Suspense fallback={null}>
           <PolytopiaWorld
