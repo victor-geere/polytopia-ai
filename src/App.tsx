@@ -8,7 +8,7 @@ import {
   trainUnit,
   checkWinConditions,
 } from './game'
-import { findPath, isReachable, chebyshev } from './game/pathfinding'
+import { findPath, isReachable, chebyshev, tribeCanClimb } from './game/pathfinding'
 import { resolveCombat, canAttack } from './game/combat'
 import type { AiConfig } from './game/aiCompact'
 import { requestAiActions, mockHeuristicActions } from './game/aiClient'
@@ -50,7 +50,6 @@ function readQuery() {
   if (raw !== null && raw !== '') {
     const n = Number(raw)
     if (Number.isFinite(n) && n > 0) {
-      // Back-compat: bare "1" meant "on"; treat as 500ms
       autoplayMs = n === 1 ? 500 : Math.floor(n)
     }
   }
@@ -132,14 +131,17 @@ function App() {
     !!aiConfig &&
     (AUTOPLAY || currentPlayer.tribe !== humanTribe)
 
+  // Autoplay keeps mountains (Climbing-gated); convert water so paths exist around peaks
   useEffect(() => {
     if (!AUTOPLAY || QUERY.winner) return
     setState((prev) => {
       const tiles = prev.tiles.map((row) =>
-        row.map((t) => ({
-          ...t,
-          terrain: t.building === 'city' ? t.terrain : ('land' as const),
-        }))
+        row.map((t) => {
+          if (t.terrain === 'water' && t.building !== 'city') {
+            return { ...t, terrain: 'land' as const }
+          }
+          return t
+        })
       )
       return { ...prev, tiles }
     })
@@ -265,11 +267,16 @@ function App() {
         return
       }
 
-      if (!isReachable(state, unit.x, unit.y, targetX, targetY, unit.movement)) {
+      const canClimb = tribeCanClimb(state, unit.tribe)
+      if (state.tiles[targetY][targetX].terrain === 'mountain' && !canClimb) {
+        setToast('Need Climbing tech to enter mountains.')
+        return
+      }
+      if (!isReachable(state, unit.x, unit.y, targetX, targetY, unit.movement, { canClimb })) {
         setToast('That tile is out of movement range.')
         return
       }
-      if (!findPath(state, unit.x, unit.y, targetX, targetY, unit.movement)) {
+      if (!findPath(state, unit.x, unit.y, targetX, targetY, unit.movement, { canClimb })) {
         setToast('No path to that tile.')
         return
       }
