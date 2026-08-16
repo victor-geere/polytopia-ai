@@ -10,12 +10,11 @@ const TERRAIN_COLORS: Record<TerrainType, string> = {
   ice: '#c8e0f0',
 }
 
-const MOVE_HIGHLIGHT = new THREE.Color('#e8c84a')
+/** Mild yellow used only as a mix target for move highlights (not solid gold). */
+const MOVE_TINT = new THREE.Color('#c9b84a')
 
 const TILE_SIZE = 1
-/** Top face size (same visual footprint as before) */
 const TOP_SIZE = TILE_SIZE * 0.92
-/** Bottom face size — full cell so neighboring bases touch */
 const BOTTOM_SIZE = TILE_SIZE
 
 interface TileGridProps {
@@ -23,37 +22,29 @@ interface TileGridProps {
   reachableKeys?: Set<string>
 }
 
-/**
- * Square frustum (bevelled block): larger base, smaller top.
- * Bases of adjacent tiles touch; tops keep the previous inset look.
- */
 function createBevelledBox(topSize: number, bottomSize: number, height: number): THREE.BufferGeometry {
   const ht = topSize / 2
   const hb = bottomSize / 2
   const hy = height / 2
 
-  // 8 corners: 0-3 bottom, 4-7 top (CCW from +Z)
   const positions = new Float32Array([
-    // bottom
     -hb, -hy,  hb,
      hb, -hy,  hb,
      hb, -hy, -hb,
     -hb, -hy, -hb,
-    // top
     -ht,  hy,  ht,
      ht,  hy,  ht,
      ht,  hy, -ht,
     -ht,  hy, -ht,
   ])
 
-  // Non-indexed faces with per-face normals (flat shading)
   const faces: number[][] = [
-    [0, 1, 5, 4], // +Z
-    [1, 2, 6, 5], // +X
-    [2, 3, 7, 6], // -Z
-    [3, 0, 4, 7], // -X
-    [4, 5, 6, 7], // +Y top
-    [0, 3, 2, 1], // -Y bottom
+    [0, 1, 5, 4],
+    [1, 2, 6, 5],
+    [2, 3, 7, 6],
+    [3, 0, 4, 7],
+    [4, 5, 6, 7],
+    [0, 3, 2, 1],
   ]
 
   const verts: number[] = []
@@ -75,7 +66,6 @@ function createBevelledBox(topSize: number, bottomSize: number, height: number):
     ny /= len
     nz /= len
 
-    // two triangles: a-b-c and a-c-d
     for (const idx of [a, b, c, a, c, d]) {
       verts.push(positions[idx * 3], positions[idx * 3 + 1], positions[idx * 3 + 2])
       norms.push(nx, ny, nz)
@@ -86,6 +76,16 @@ function createBevelledBox(topSize: number, bottomSize: number, height: number):
   geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3))
   geo.setAttribute('normal', new THREE.Float32BufferAttribute(norms, 3))
   return geo
+}
+
+/** Terrain color with a light yellowish hue + slight brightness bump. */
+function tintForMove(base: THREE.Color): THREE.Color {
+  const out = base.clone().lerp(MOVE_TINT, 0.28)
+  out.multiplyScalar(1.18)
+  out.r = Math.min(1, out.r)
+  out.g = Math.min(1, out.g)
+  out.b = Math.min(1, out.b)
+  return out
 }
 
 export function TileGrid({ state, reachableKeys }: TileGridProps) {
@@ -132,7 +132,6 @@ export function TileGrid({ state, reachableKeys }: TileGridProps) {
         const i = cursors[t]
         const pi = i * 3
         map[t].positions[pi] = (x - mapWidth / 2 + 0.5) * TILE_SIZE
-        // Water slightly lower; mountain higher; land/forest/ice sit on the base
         map[t].positions[pi + 1] =
           t === 'mountain' ? 0.4 : t === 'water' ? -0.05 : 0.05
         map[t].positions[pi + 2] = (y - mapHeight / 2 + 0.5) * TILE_SIZE
@@ -144,7 +143,6 @@ export function TileGrid({ state, reachableKeys }: TileGridProps) {
     return map
   }, [tiles, mapWidth, mapHeight])
 
-  // Single ground mesh — avoids plane+box z-fighting flicker
   const groundW = mapWidth * TILE_SIZE + 6
   const groundH = mapHeight * TILE_SIZE + 6
 
@@ -153,11 +151,10 @@ export function TileGrid({ state, reachableKeys }: TileGridProps) {
       <mesh position={[0, -0.45, 0]}>
         <boxGeometry args={[groundW, 0.5, groundH]} />
         <meshStandardMaterial
-          color="#6b4423"
+          color="#c2a66a"
           flatShading
-          roughness={1}
+          roughness={0.95}
           metalness={0}
-          // Push base slightly back in depth buffer vs tile bottoms
           polygonOffset
           polygonOffsetFactor={1}
           polygonOffsetUnits={1}
@@ -197,16 +194,15 @@ function TerrainInstances({
 }) {
   const meshRef = useRef<THREE.InstancedMesh>(null)
   const baseColor = useMemo(() => new THREE.Color(TERRAIN_COLORS[terrain]), [terrain])
+  const moveColor = useMemo(() => tintForMove(baseColor), [baseColor])
 
   const geometry = useMemo(() => {
     if (terrain === 'mountain') {
-      // Taller frustum, still bevelled
       return createBevelledBox(TOP_SIZE * 0.95, BOTTOM_SIZE, 0.75)
     }
     if (terrain === 'water') {
       return createBevelledBox(TOP_SIZE, BOTTOM_SIZE, 0.2)
     }
-    // land / forest / ice — bevelled grass-style blocks
     return createBevelledBox(TOP_SIZE, BOTTOM_SIZE, 0.28)
   }, [terrain])
 
@@ -240,13 +236,13 @@ function TerrainInstances({
       const { x, y } = coords[i]
       const key = `${x},${y}`
       if (reachableKeys?.has(key)) {
-        mesh.setColorAt(i, MOVE_HIGHLIGHT)
+        mesh.setColorAt(i, moveColor)
       } else {
         mesh.setColorAt(i, baseColor)
       }
     }
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
-  }, [coords, count, reachableKeys, baseColor])
+  }, [coords, count, reachableKeys, baseColor, moveColor])
 
   return (
     <instancedMesh

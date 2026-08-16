@@ -63,7 +63,7 @@ function App() {
         setToast('AI turn — thinking… (runner not wired yet; use End Turn to skip)')
       } else {
         setToast(
-          `You are ${tribeLabel.toUpperCase()}. Tap your unit, then tap a gold tile to move.`
+          `You are ${tribeLabel.toUpperCase()}. Tap your unit, then tap a highlighted tile to move.`
         )
       }
       setFocusKey((k) => k + 1)
@@ -87,9 +87,15 @@ function App() {
       if (!unit || unit.tribe !== currentPlayer.tribe || unit.acted) return
 
       const occupant = Object.values(state.units).find(
-        (u) => u.x === targetX && u.y === targetY && u.health > 0
+        (u) => u.x === targetX && u.y === targetY && u.health > 0 && u.id !== unit.id
       )
-      if (occupant && occupant.tribe === unit.tribe) return
+      // Friendly unit on target: allow only if target is own city (stacking at capital)
+      if (occupant && occupant.tribe === unit.tribe) {
+        const cityThere = Object.values(state.cities).some(
+          (c) => c.x === targetX && c.y === targetY && c.tribe === unit.tribe
+        )
+        if (!cityThere) return
+      }
 
       if (occupant && occupant.tribe !== unit.tribe) {
         const dist = chebyshev(unit.x, unit.y, occupant.x, occupant.y)
@@ -181,9 +187,9 @@ function App() {
       }
       setSelectedUnitId(id)
       if (isRangedUnit(unit.type)) {
-        setToast(`Archer selected (range ${unit.range}). Gold tiles = move, red = attack.`)
+        setToast(`Archer selected (range ${unit.range}). Highlighted tiles = move, red = attack.`)
       } else {
-        setToast('Gold tiles show where you can move. Tap one to move.')
+        setToast('Highlighted tiles show where you can move. Tap one to move.')
       }
     },
     [state.units, currentPlayer.tribe, isAiTurn]
@@ -219,11 +225,11 @@ function App() {
       if (next) {
         setToast(
           unitType === 'archer'
-            ? 'Archer trained near your capital! (Cannot act until next turn.)'
-            : `${unitType} trained near your capital.`
+            ? 'Archer trained at your capital (above the spire). Acts next turn.'
+            : `${unitType} trained at your capital (above the spire).`
         )
       } else {
-        setToast('Cannot train (stars, tech, or no free tile near city).')
+        setToast('Cannot train (stars or tech).')
       }
       return next ?? prev
     })
@@ -293,18 +299,19 @@ function App() {
         style={{ width: '100%', height: '100%' }}
         onPointerMissed={() => !isAiTurn && setSelectedUnitId(null)}
       >
-        <color attach="background" args={['#5ec8f0']} />
-        <fog attach="fog" args={['#7ed4f5', 45, 120]} />
+        {/* Slightly softer cartoon sky */}
+        <color attach="background" args={['#4ab0d8']} />
+        <fog attach="fog" args={['#6bc4e0', 48, 125]} />
 
-        <ambientLight intensity={0.45} color="#fff4e0" />
+        <ambientLight intensity={0.4} color="#fff4e0" />
         <directionalLight
           position={[18, 28, 12]}
-          intensity={1.85}
+          intensity={1.55}
           color="#fff2cc"
           castShadow={false}
         />
-        <directionalLight position={[-8, 10, -6]} intensity={0.35} color="#a8d8ff" />
-        <hemisphereLight args={['#87e0ff', '#6bc46b', 0.55]} />
+        <directionalLight position={[-8, 10, -6]} intensity={0.3} color="#a8d8ff" />
+        <hemisphereLight args={['#6ec4e8', '#6bc46b', 0.45]} />
 
         <Suspense fallback={null}>
           <PolytopiaWorld

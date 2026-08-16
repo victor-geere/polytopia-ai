@@ -17,7 +17,6 @@ export function uid(prefix = 'id'): string {
   return `${prefix}_${nextId++}`
 }
 
-/** Create a simple procedural square map. */
 export function createMap(width: number, height: number): Tile[][] {
   const tiles: Tile[][] = []
   for (let y = 0; y < height; y++) {
@@ -230,38 +229,10 @@ function researchCostSafe(techId: TechId, cityCount: number): number {
   return base + Math.max(0, cityCount - 1) * 2
 }
 
-/** Find an empty land tile adjacent to (or on) the city for spawning. */
-function findSpawnTile(
-  state: GameState,
-  city: City
-): { x: number; y: number } | null {
-  const occupied = new Set(
-    Object.values(state.units)
-      .filter((u) => u.health > 0)
-      .map((u) => `${u.x},${u.y}`)
-  )
-
-  const candidates: { x: number; y: number }[] = [{ x: city.x, y: city.y }]
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
-      if (dx === 0 && dy === 0) continue
-      candidates.push({ x: city.x + dx, y: city.y + dy })
-    }
-  }
-
-  for (const { x, y } of candidates) {
-    if (x < 0 || y < 0 || x >= state.mapWidth || y >= state.mapHeight) continue
-    const tile = state.tiles[y][x]
-    if (tile.terrain === 'water') continue
-    if (occupied.has(`${x},${y}`)) continue
-    return { x, y }
-  }
-  return null
-}
-
 /**
- * Train a unit at the player's capital (or first city).
- * Requires stars and tech for non-warrior units.
+ * Train a unit at the player's capital (first city).
+ * Spawns on the city tile itself so it can hover above the spire visually.
+ * Multiple units may share the capital tile until they move out.
  */
 export function trainUnit(
   state: GameState,
@@ -281,12 +252,8 @@ export function trainUnit(
   const city = cityId ? state.cities[cityId] : null
   if (!city) return null
 
-  const spawn = findSpawnTile(state, city)
-  if (!spawn) return null
-
   const id = uid('unit')
-  const unit = createUnit(unitType, player.tribe, spawn.x, spawn.y, id)
-  // Newly trained units cannot act the turn they are built
+  const unit = createUnit(unitType, player.tribe, city.x, city.y, id)
   unit.acted = true
   unit.movement = 0
 
