@@ -170,7 +170,34 @@ export function buildAiUserPrompt(
   ].join('\n')
 }
 
-export type AiProvider = 'deepseek' | 'openrouter' | 'ai21' | 'huggingface'
+/** Providers that accept an API key in the splash UI today. */
+export const KEYED_PROVIDERS = ['deepseek', 'grok'] as const
+
+export type AiProvider =
+  | 'deepseek'
+  | 'grok'
+  | 'openrouter'
+  | 'ai21'
+  | 'huggingface'
+
+export function providerNeedsKey(p: AiProvider): boolean {
+  return (KEYED_PROVIDERS as readonly string[]).includes(p)
+}
+
+export function providerLabel(p: AiProvider): string {
+  switch (p) {
+    case 'deepseek':
+      return 'DeepSeek'
+    case 'grok':
+      return 'Grok (xAI)'
+    case 'openrouter':
+      return 'OpenRouter'
+    case 'ai21':
+      return 'AI21'
+    case 'huggingface':
+      return 'Hugging Face'
+  }
+}
 
 export interface AiConfig {
   provider: AiProvider

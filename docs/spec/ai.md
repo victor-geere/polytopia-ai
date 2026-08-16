@@ -1,6 +1,6 @@
 # AI Enemy Gameplay Spec
 
-This document specifies how an external LLM (DeepSeek first; OpenRouter / AI21 / Hugging Face later) plays as the opposing tribe in **Polytopia 3D**.
+This document specifies how an external LLM (DeepSeek and **Grok / xAI** first; OpenRouter / AI21 / Hugging Face later) plays as the opposing tribe in **Polytopia 3D**.
 
 ## Goals
 
@@ -13,11 +13,12 @@ This document specifies how an external LLM (DeepSeek first; OpenRouter / AI21 /
 | Provider     | Status        | Auth                         |
 |--------------|---------------|------------------------------|
 | DeepSeek     | **Supported** | API key (`sk-…`)             |
+| Grok (xAI)   | **Supported** | API key (`xai-…` / console)  |
 | OpenRouter   | Not available | —                            |
 | AI21         | Not available | —                            |
 | Hugging Face | Not available | —                            |
 
-Splash screen: provider `<select>`. Only **DeepSeek** shows an API key field. Other options show “Not yet available” and block Start until DeepSeek is chosen (or the user starts without AI / pass-and-play).
+Splash screen: provider `<select>`. **DeepSeek** and **Grok** show an API key field. Other options show “Not yet available” and block Start in vs-AI mode until a keyed provider is chosen with a non-empty key (or the user starts pass-and-play).
 
 API keys are stored only in memory (or optional `sessionStorage`); never committed to the repo.
 
@@ -112,7 +113,7 @@ Compact companion object (not the full client `GameState`):
 - `you` = the tribe the model must play this request.
 - `enemy` = human tribe (summary only; fog of war can omit unseen cells later).
 
-## Prompt contract (DeepSeek)
+## Prompt contract
 
 **System (fixed, short):**
 
@@ -154,7 +155,9 @@ Client validation:
 4. Unknown / illegal actions skipped; log reason.
 5. After `end` or max actions / timeout → `endTurn`.
 
-## DeepSeek API call (client-side sketch)
+## API call sketches
+
+### DeepSeek
 
 ```
 POST https://api.deepseek.com/chat/completions
@@ -165,8 +168,22 @@ Authorization: Bearer <apiKey>
     { "role": "system", "content": "<system>" },
     { "role": "user", "content": "STATE:... BOARD:..." }
   ],
-  "temperature": 0.3,
-  "response_format": { "type": "json_object" }  // or instruct array-only and parse
+  "temperature": 0.3
+}
+```
+
+### Grok (xAI)
+
+```
+POST https://api.x.ai/v1/chat/completions
+Authorization: Bearer <apiKey>
+{
+  "model": "grok-3",
+  "messages": [
+    { "role": "system", "content": "<system>" },
+    { "role": "user", "content": "STATE:... BOARD:..." }
+  ],
+  "temperature": 0.3
 }
 ```
 
@@ -175,8 +192,8 @@ Prefer models that respect “JSON only”. If the provider returns prose, extra
 ## Implementation phases (suggested)
 
 1. **Serializer** — `boardToCompact(state)` + `stateToCompact(state, aiTribe)` (pure TS).
-2. **Splash** — provider + DeepSeek key; pass config into App.
-3. **AI turn runner** — on AI index, call DeepSeek, apply actions, end turn.
+2. **Splash** — provider + DeepSeek / Grok key; pass config into App.
+3. **AI turn runner** — on AI index, call provider, apply actions, end turn.
 4. **UX** — “AI thinking…” toast; disable human input during AI turn.
 5. **Later** — fog of war in BOARD; production/harvest actions; OpenRouter / AI21 / HF adapters.
 

@@ -1,5 +1,6 @@
 import { useState, type CSSProperties } from 'react'
 import type { AiConfig, AiProvider } from '../../game/aiCompact'
+import { providerNeedsKey } from '../../game/aiCompact'
 
 export type BoardSizeOption = 8 | 12 | 16 | 20 | 24
 export type DifficultyLevel = 'easy' | 'normal' | 'hard'
@@ -18,6 +19,7 @@ interface SplashProps {
 
 const PROVIDERS: { id: AiProvider; label: string }[] = [
   { id: 'deepseek', label: 'DeepSeek' },
+  { id: 'grok', label: 'Grok (xAI)' },
   { id: 'openrouter', label: 'OpenRouter' },
   { id: 'ai21', label: 'AI21' },
   { id: 'huggingface', label: 'Hugging Face' },
@@ -44,8 +46,9 @@ export function Splash({ onStart, yourTribe }: SplashProps) {
   const [boardSize, setBoardSize] = useState<BoardSizeOption>(16)
   const [difficulty, setDifficulty] = useState<DifficultyLevel>('normal')
 
-  const deepseekReady = provider === 'deepseek' && apiKey.trim().length > 0
-  const canStartAi = playMode === 'vs-ai' && deepseekReady
+  const needsKey = providerNeedsKey(provider)
+  const keyReady = needsKey && apiKey.trim().length > 0
+  const canStartAi = playMode === 'vs-ai' && keyReady
   const canStart = playMode === 'pass-and-play' || canStartAi
 
   const handleStart = () => {
@@ -56,11 +59,20 @@ export function Splash({ onStart, yourTribe }: SplashProps) {
     if (!canStartAi) return
     onStart({
       mode: 'vs-ai',
-      ai: { provider: 'deepseek', apiKey: apiKey.trim() },
+      ai: { provider, apiKey: apiKey.trim() },
       boardSize,
       difficulty,
     })
   }
+
+  const keyFieldLabel =
+    provider === 'grok'
+      ? 'xAI / Grok API key'
+      : provider === 'deepseek'
+        ? 'DeepSeek API key'
+        : 'API key'
+
+  const keyPlaceholder = provider === 'grok' ? 'xai-…' : 'sk-…'
 
   return (
     <div
@@ -197,21 +209,23 @@ export function Splash({ onStart, yourTribe }: SplashProps) {
               ))}
             </select>
 
-            {provider === 'deepseek' ? (
+            {needsKey ? (
               <div style={{ marginTop: 12 }}>
                 <label style={{ display: 'block', fontSize: 13, marginBottom: 6, opacity: 0.9 }}>
-                  DeepSeek API key
+                  {keyFieldLabel}
                 </label>
                 <input
                   type="password"
                   autoComplete="off"
-                  placeholder="sk-…"
+                  placeholder={keyPlaceholder}
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                   style={inputStyle}
                 />
                 <div style={{ fontSize: 11, opacity: 0.55, marginTop: 6 }}>
-                  Key stays in this browser session only. See docs/spec/ai.md.
+                  {provider === 'grok'
+                    ? 'Key from console.x.ai. Stored in this browser session only.'
+                    : 'Key stays in this browser session only. See docs/spec/ai.md.'}
                 </div>
               </div>
             ) : (
