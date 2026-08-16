@@ -10,33 +10,18 @@ interface Props {
   state: GameState
   selectedUnitId: string | null
   onTileClick: (x: number, y: number) => void
+  /** Reports reachable keys so TileGrid can tint meshes */
+  onReachableChange?: (keys: Set<string>) => void
 }
 
 /**
- * Raycast plane + movement (gold) and attack-range (red) highlights.
+ * Invisible raycast plane + red attack markers only.
+ * Move targets are shown by recoloring the tile meshes themselves.
  */
 export function ClickableTiles({ state, selectedUnitId, onTileClick }: Props) {
   const { mapWidth, mapHeight } = state
 
   const selectedUnit = selectedUnitId ? state.units[selectedUnitId] : null
-
-  const reachable = useMemo(() => {
-    if (!selectedUnit || selectedUnit.acted) return [] as { x: number; y: number }[]
-    const cells: { x: number; y: number }[] = []
-    const range = selectedUnit.movement
-    for (let dy = -range; dy <= range; dy++) {
-      for (let dx = -range; dx <= range; dx++) {
-        if (dx === 0 && dy === 0) continue
-        const tx = selectedUnit.x + dx
-        const ty = selectedUnit.y + dy
-        if (tx < 0 || ty < 0 || tx >= mapWidth || ty >= mapHeight) continue
-        if (isReachable(state, selectedUnit.x, selectedUnit.y, tx, ty, range)) {
-          cells.push({ x: tx, y: ty })
-        }
-      }
-    }
-    return cells
-  }, [selectedUnit, state, mapWidth, mapHeight])
 
   const attackTargets = useMemo(() => {
     if (!selectedUnit || selectedUnit.acted) return [] as { x: number; y: number }[]
@@ -56,38 +41,14 @@ export function ClickableTiles({ state, selectedUnitId, onTileClick }: Props) {
     <group>
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, 0.2, 0]}
+        position={[0, 0.22, 0]}
         onPointerDown={handlePointerDown}
       >
         <planeGeometry args={[mapWidth * TILE_SIZE, mapHeight * TILE_SIZE]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      {reachable.map(({ x, y }) => {
-        const wx = (x - mapWidth / 2 + 0.5) * TILE_SIZE
-        const wz = (y - mapHeight / 2 + 0.5) * TILE_SIZE
-        return (
-          <mesh
-            key={`m-${x},${y}`}
-            rotation={[-Math.PI / 2, 0, 0]}
-            position={[wx, 0.28, wz]}
-            onPointerDown={(e) => {
-              e.stopPropagation()
-              onTileClick(x, y)
-            }}
-          >
-            <planeGeometry args={[TILE_SIZE * 0.85, TILE_SIZE * 0.85]} />
-            <meshBasicMaterial
-              color="#ffd700"
-              transparent
-              opacity={0.35}
-              depthWrite={false}
-            />
-          </mesh>
-        )
-      })}
-
-      {/* Attack range — red rings under enemy tiles in range (esp. archers range 2) */}
+      {/* Attack targets only — red rings (move highlight is tile recolor) */}
       {attackTargets.map(({ x, y }) => {
         const wx = (x - mapWidth / 2 + 0.5) * TILE_SIZE
         const wz = (y - mapHeight / 2 + 0.5) * TILE_SIZE
@@ -95,7 +56,7 @@ export function ClickableTiles({ state, selectedUnitId, onTileClick }: Props) {
           <mesh
             key={`a-${x},${y}`}
             rotation={[-Math.PI / 2, 0, 0]}
-            position={[wx, 0.3, wz]}
+            position={[wx, 0.32, wz]}
             onPointerDown={(e) => {
               e.stopPropagation()
               onTileClick(x, y)
@@ -105,7 +66,7 @@ export function ClickableTiles({ state, selectedUnitId, onTileClick }: Props) {
             <meshBasicMaterial
               color="#e74c3c"
               transparent
-              opacity={0.75}
+              opacity={0.8}
               depthWrite={false}
             />
           </mesh>
@@ -113,4 +74,29 @@ export function ClickableTiles({ state, selectedUnitId, onTileClick }: Props) {
       })}
     </group>
   )
+}
+
+/** Shared helper used by PolytopiaWorld to compute reachable keys for TileGrid. */
+export function computeReachableKeys(
+  state: GameState,
+  selectedUnitId: string | null
+): Set<string> {
+  const keys = new Set<string>()
+  if (!selectedUnitId) return keys
+  const unit = state.units[selectedUnitId]
+  if (!unit || unit.acted) return keys
+
+  const range = unit.movement
+  for (let dy = -range; dy <= range; dy++) {
+    for (let dx = -range; dx <= range; dx++) {
+      if (dx === 0 && dy === 0) continue
+      const tx = unit.x + dx
+      const ty = unit.y + dy
+      if (tx < 0 || ty < 0 || tx >= state.mapWidth || ty >= state.mapHeight) continue
+      if (isReachable(state, unit.x, unit.y, tx, ty, range)) {
+        keys.add(`${tx},${ty}`)
+      }
+    }
+  }
+  return keys
 }

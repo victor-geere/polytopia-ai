@@ -1,9 +1,10 @@
+import { useMemo } from 'react'
 import { Physics } from '@react-three/rapier'
 import { TileGrid } from './TileGrid'
 import { TerrainCSGFeatures } from './TerrainCSG'
 import { UnitLayer } from '../Units/UnitLayer'
 import { CityLayer } from './CityLayer'
-import { ClickableTiles } from './ClickableTiles'
+import { ClickableTiles, computeReachableKeys } from './ClickableTiles'
 import { ClanBillboards } from '../Units/ClanBillboards'
 import type { GameState } from '../../game/types'
 
@@ -20,9 +21,14 @@ export function PolytopiaWorld({
   onSelectUnit,
   onTileClick,
 }: Props) {
+  const reachableKeys = useMemo(
+    () => computeReachableKeys(state, selectedUnitId),
+    [state, selectedUnitId]
+  )
+
   return (
     <Physics timeStep={1 / 30} gravity={[0, -9.81, 0]}>
-      <TileGrid state={state} />
+      <TileGrid state={state} reachableKeys={reachableKeys} />
       <TerrainCSGFeatures />
       <CityLayer state={state} />
       <UnitLayer
