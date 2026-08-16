@@ -1,19 +1,31 @@
 import { Canvas } from '@react-three/fiber'
-import { OrbitControls, Box } from '@react-three/drei'
-import { Suspense } from 'react'
+import { OrbitControls } from '@react-three/drei'
+import { Suspense, useState } from 'react'
+import { createInitialState } from './game'
+import { PolytopiaWorld } from './components/World/PolytopiaWorld'
+import type { GameState } from './game/types'
 
 /**
- * Phase 1 foundation scene.
- * - Mobile-friendly Canvas settings (dpr cap, no antialias, high-performance preference)
- * - Adaptive performance enabled
- * - Simple scene to verify R3F works
+ * Phase 3: 3D World foundation.
+ * - Mobile-friendly Canvas
+ * - Procedural instanced tile grid driven by pure GameState
+ * - three-bvh-csg demo feature
  */
 function App() {
+  const [state] = useState<GameState>(() =>
+    createInitialState({
+      mode: 'perfection',
+      mapWidth: 16,
+      mapHeight: 16,
+      tribes: ['imperius', 'bardur'],
+    })
+  )
+
   return (
     <Canvas
-      camera={{ position: [8, 12, 8], fov: 45, near: 0.1, far: 200 }}
-      dpr={[1, 1.5]} // Cap pixel ratio for mobile
-      performance={{ min: 0.5 }} // Adaptive performance
+      camera={{ position: [10, 16, 10], fov: 45, near: 0.1, far: 200 }}
+      dpr={[1, 1.5]}
+      performance={{ min: 0.5 }}
       gl={{
         antialias: false,
         powerPreference: 'high-performance',
@@ -22,28 +34,18 @@ function App() {
       style={{ width: '100%', height: '100%' }}
     >
       <color attach="background" args={['#1a1a2e']} />
-      <ambientLight intensity={0.45} />
-      <directionalLight
-        position={[10, 20, 5]}
-        intensity={1.1}
-        castShadow={false} // shadows off by default for mobile
-      />
+      <ambientLight intensity={0.5} />
+      <directionalLight position={[12, 25, 8]} intensity={1.15} />
 
       <Suspense fallback={null}>
-        {/* Placeholder geometry — will be replaced by tile grid in Phase 3 */}
-        <Box args={[1, 1, 1]} position={[0, 0.5, 0]}>
-          <meshStandardMaterial color="#4a7c59" flatShading />
-        </Box>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-          <planeGeometry args={[20, 20]} />
-          <meshStandardMaterial color="#2d4a3e" flatShading />
-        </mesh>
+        <PolytopiaWorld state={state} />
       </Suspense>
 
       <OrbitControls
-        maxPolarAngle={Math.PI / 2.1}
-        minDistance={5}
-        maxDistance={40}
+        maxPolarAngle={Math.PI / 2.15}
+        minDistance={6}
+        maxDistance={45}
+        target={[0, 0, 0]}
         enablePan={true}
       />
     </Canvas>
