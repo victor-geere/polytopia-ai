@@ -10,21 +10,84 @@ const TERRAIN_COLORS: Record<TerrainType, string> = {
   ice: '#c8e0f0',
 }
 
-/** Warm gold tint applied to the tile mesh itself when reachable */
 const MOVE_HIGHLIGHT = new THREE.Color('#e8c84a')
 
 const TILE_SIZE = 1
+/** Top face size (same visual footprint as before) */
+const TOP_SIZE = TILE_SIZE * 0.92
+/** Bottom face size — full cell so neighboring bases touch */
+const BOTTOM_SIZE = TILE_SIZE
 
 interface TileGridProps {
   state: GameState
-  /** Set of "x,y" keys that should be tinted as move targets */
   reachableKeys?: Set<string>
 }
 
 /**
- * Renders the square map using InstancedMesh for performance.
- * Reachable tiles get their instance color shifted to gold (no separate overlay).
+ * Square frustum (bevelled block): larger base, smaller top.
+ * Bases of adjacent tiles touch; tops keep the previous inset look.
  */
+function createBevelledBox(topSize: number, bottomSize: number, height: number): THREE.BufferGeometry {
+  const ht = topSize / 2
+  const hb = bottomSize / 2
+  const hy = height / 2
+
+  // 8 corners: 0-3 bottom, 4-7 top (CCW from +Z)
+  const positions = new Float32Array([
+    // bottom
+    -hb, -hy,  hb,
+     hb, -hy,  hb,
+     hb, -hy, -hb,
+    -hb, -hy, -hb,
+    // top
+    -ht,  hy,  ht,
+     ht,  hy,  ht,
+     ht,  hy, -ht,
+    -ht,  hy, -ht,
+  ])
+
+  // Non-indexed faces with per-face normals (flat shading)
+  const faces: number[][] = [
+    [0, 1, 5, 4], // +Z
+    [1, 2, 6, 5], // +X
+    [2, 3, 7, 6], // -Z
+    [3, 0, 4, 7], // -X
+    [4, 5, 6, 7], // +Y top
+    [0, 3, 2, 1], // -Y bottom
+  ]
+
+  const verts: number[] = []
+  const norms: number[] = []
+
+  for (const face of faces) {
+    const [a, b, c, d] = face
+    const ax = positions[a * 3], ay = positions[a * 3 + 1], az = positions[a * 3 + 2]
+    const bx = positions[b * 3], by = positions[b * 3 + 1], bz = positions[b * 3 + 2]
+    const cx = positions[c * 3], cy = positions[c * 3 + 1], cz = positions[c * 3 + 2]
+
+    const e1x = bx - ax, e1y = by - ay, e1z = bz - az
+    const e2x = cx - ax, e2y = cy - ay, e2z = cz - az
+    let nx = e1y * e2z - e1z * e2y
+    let ny = e1z * e2x - e1x * e2z
+    let nz = e1x * e2y - e1y * e2x
+    const len = Math.hypot(nx, ny, nz) || 1
+    nx /= len
+    ny /= len
+    nz /= len
+
+    // two triangles: a-b-c and a-c-d
+    for (const idx of [a, b, c, a, c, d]) {
+      verts.push(positions[idx * 3], positions[idx * 3 + 1], positions[idx * 3 + 2])
+      norms.push(nx, ny, nz)
+    }
+  }
+
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3))
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(norms, 3))
+  return geo
+}
+
 export function TileGrid({ state, reachableKeys }: TileGridProps) {
   const { tiles, mapWidth, mapHeight } = state
 
@@ -69,8 +132,9 @@ export function TileGrid({ state, reachableKeys }: TileGridProps) {
         const i = cursors[t]
         const pi = i * 3
         map[t].positions[pi] = (x - mapWidth / 2 + 0.5) * TILE_SIZE
+        // Water slightly lower; mountain higher; land/forest/ice sit on the base
         map[t].positions[pi + 1] =
-          t === 'mountain' ? 0.35 : t === 'water' ? -0.12 : 0
+          t === 'mountain' ? 0.4 : t === 'water' ? -0.05 : 0.05
         map[t].positions[pi + 2] = (y - mapHeight / 2 + 0.5) * TILE_SIZE
         map[t].coords[i] = { x, y }
         cursors[t]++
@@ -80,20 +144,24 @@ export function TileGrid({ state, reachableKeys }: TileGridProps) {
     return map
   }, [tiles, mapWidth, mapHeight])
 
-  const groundW = mapWidth * TILE_SIZE + 4
-  const groundH = mapHeight * TILE_SIZE + 4
+  // Single ground mesh — avoids plane+box z-fighting flicker
+  const groundW = mapWidth * TILE_SIZE + 6
+  const groundH = mapHeight * TILE_SIZE + 6
 
   return (
     <group>
-      {/* Brown earth base under the whole map */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.35, 0]} receiveShadow={false}>
-        <planeGeometry args={[groundW, groundH]} />
-        <meshStandardMaterial color="#6b4423" flatShading roughness={1} metalness={0} />
-      </mesh>
-      {/* Slightly thicker dirt slab so edges read in perspective */}
-      <mesh position={[0, -0.55, 0]}>
-        <boxGeometry args={[groundW, 0.4, groundH]} />
-        <meshStandardMaterial color="#5a3820" flatShading roughness={1} />
+      <mesh position={[0, -0.45, 0]}>
+        <boxGeometry args={[groundW, 0.5, groundH]} />
+        <meshStandardMaterial
+          color="#6b4423"
+          flatShading
+          roughness={1}
+          metalness={0}
+          // Push base slightly back in depth buffer vs tile bottoms
+          polygonOffset
+          polygonOffsetFactor={1}
+          polygonOffsetUnits={1}
+        />
       </mesh>
 
       {(Object.keys(groups) as TerrainType[]).map((terrain) => {
@@ -132,15 +200,16 @@ function TerrainInstances({
 
   const geometry = useMemo(() => {
     if (terrain === 'mountain') {
-      return new THREE.BoxGeometry(TILE_SIZE * 0.92, 0.7, TILE_SIZE * 0.92)
+      // Taller frustum, still bevelled
+      return createBevelledBox(TOP_SIZE * 0.95, BOTTOM_SIZE, 0.75)
     }
     if (terrain === 'water') {
-      return new THREE.BoxGeometry(TILE_SIZE * 0.98, 0.18, TILE_SIZE * 0.98)
+      return createBevelledBox(TOP_SIZE, BOTTOM_SIZE, 0.2)
     }
-    return new THREE.BoxGeometry(TILE_SIZE * 0.92, 0.22, TILE_SIZE * 0.92)
+    // land / forest / ice — bevelled grass-style blocks
+    return createBevelledBox(TOP_SIZE, BOTTOM_SIZE, 0.28)
   }, [terrain])
 
-  // Matrices once positions change
   useLayoutEffect(() => {
     const mesh = meshRef.current
     if (!mesh) return
@@ -156,12 +225,10 @@ function TerrainInstances({
     mesh.computeBoundingSphere()
   }, [positions, count])
 
-  // Per-instance colors: gold when reachable, terrain color otherwise
   useLayoutEffect(() => {
     const mesh = meshRef.current
     if (!mesh) return
 
-    // Ensure instanceColor buffer exists
     if (!mesh.instanceColor) {
       mesh.instanceColor = new THREE.InstancedBufferAttribute(
         new Float32Array(count * 3),
@@ -190,7 +257,6 @@ function TerrainInstances({
       frustumCulled={false}
     >
       <meshStandardMaterial
-        // Base color is overridden per-instance via instanceColor
         color="#ffffff"
         flatShading
         roughness={0.85}
