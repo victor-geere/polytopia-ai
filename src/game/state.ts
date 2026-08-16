@@ -24,9 +24,9 @@ export function createMap(width: number, height: number): Tile[][] {
     for (let x = 0; x < width; x++) {
       const r = Math.random()
       let terrain: Tile['terrain'] = 'land'
-      if (r < 0.18) terrain = 'water'
-      else if (r < 0.28) terrain = 'mountain'
-      else if (r < 0.42) terrain = 'forest'
+      if (r < 0.12) terrain = 'water'
+      else if (r < 0.2) terrain = 'mountain'
+      else if (r < 0.32) terrain = 'forest'
 
       row.push({
         x,
@@ -60,10 +60,10 @@ export function createInitialState(options: {
   const players: PlayerState[] = []
 
   const startPositions = [
-    { x: 2, y: 2 },
-    { x: mapWidth - 3, y: mapHeight - 3 },
-    { x: 2, y: mapHeight - 3 },
-    { x: mapWidth - 3, y: 2 },
+    { x: 1, y: 1 },
+    { x: mapWidth - 2, y: mapHeight - 2 },
+    { x: 1, y: mapHeight - 2 },
+    { x: mapWidth - 2, y: 1 },
   ]
 
   tribes.forEach((tribe, i) => {
@@ -75,6 +75,20 @@ export function createInitialState(options: {
     tiles[pos.y][pos.x].building = 'city'
     tiles[pos.y][pos.x].owner = tribe
     tiles[pos.y][pos.x].exploredBy = [tribe]
+
+    // Clear a path corridor toward the center so mock AI can approach
+    const cx = Math.floor(mapWidth / 2)
+    const cy = Math.floor(mapHeight / 2)
+    const steps = Math.max(mapWidth, mapHeight)
+    for (let s = 0; s <= steps; s++) {
+      const x = Math.round(pos.x + ((cx - pos.x) * s) / steps)
+      const y = Math.round(pos.y + ((cy - pos.y) * s) / steps)
+      if (x >= 0 && y >= 0 && x < mapWidth && y < mapHeight) {
+        if (tiles[y][x].terrain === 'water' || tiles[y][x].terrain === 'mountain') {
+          tiles[y][x].terrain = 'land'
+        }
+      }
+    }
 
     cities[cityId] = {
       id: cityId,
@@ -152,6 +166,7 @@ export function endTurn(state: GameState): GameState {
 
   let nextState: GameState = { ...state, units }
   nextState = applyIncome(nextState, state.currentPlayerIndex)
+  nextState = syncAliveFlags(nextState)
 
   let nextIndex = (state.currentPlayerIndex + 1) % state.players.length
   let safety = 0
@@ -171,10 +186,22 @@ export function endTurn(state: GameState): GameState {
   return checkWinConditions(nextState)
 }
 
+/** Mark tribes with no living units as eliminated. */
+export function syncAliveFlags(state: GameState): GameState {
+  const players = state.players.map((p) => {
+    const hasUnit = Object.values(state.units).some(
+      (u) => u.tribe === p.tribe && u.health > 0
+    )
+    return { ...p, isAlive: hasUnit }
+  })
+  return { ...state, players }
+}
+
 export function checkWinConditions(state: GameState): GameState {
+  state = syncAliveFlags(state)
   const alive = state.players.filter((p) => p.isAlive)
 
-  if (state.mode === 'domination' && alive.length === 1) {
+  if ((state.mode === 'domination' || state.mode === 'perfection') && alive.length === 1) {
     return {
       ...state,
       gameOver: true,
@@ -229,11 +256,6 @@ function researchCostSafe(techId: TechId, cityCount: number): number {
   return base + Math.max(0, cityCount - 1) * 2
 }
 
-/**
- * Train a unit at the player's capital (first city).
- * Spawns on the city tile itself so it can hover above the spire visually.
- * Multiple units may share the capital tile until they move out.
- */
 export function trainUnit(
   state: GameState,
   playerIndex: number,

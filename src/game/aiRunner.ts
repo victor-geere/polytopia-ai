@@ -4,7 +4,7 @@
 import type { GameState, TechId } from './types'
 import { findPath, isReachable, chebyshev } from './pathfinding'
 import { resolveCombat, canAttack } from './combat'
-import { researchTech, endTurn } from './state'
+import { researchTech, endTurn, checkWinConditions } from './state'
 import type { AiAction } from './aiClient'
 
 export interface ApplyResult {
@@ -23,6 +23,7 @@ export function applyAiActions(
   if (!aiTribe) return { state, log: ['No AI player'] }
 
   for (const action of actions) {
+    if (state.gameOver) break
     if (action.op === 'end') {
       log.push('end')
       break
@@ -46,12 +47,7 @@ export function applyAiActions(
     }
 
     const [tx, ty] = action.to
-    if (
-      tx < 0 ||
-      ty < 0 ||
-      tx >= state.mapWidth ||
-      ty >= state.mapHeight
-    ) {
+    if (tx < 0 || ty < 0 || tx >= state.mapWidth || ty >= state.mapHeight) {
       log.push(`skip ${action.op} bad coords`)
       continue
     }
@@ -115,10 +111,12 @@ export function applyAiActions(
         units[def2.id] = def2
         log.push(`attack hit ${def2.id} hp=${def2.health}`)
       }
-      state = { ...state, units, players }
+      state = checkWinConditions({ ...state, units, players })
     }
   }
 
-  state = endTurn(state)
+  if (!state.gameOver) {
+    state = endTurn(state)
+  }
   return { state, log }
 }

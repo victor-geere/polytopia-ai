@@ -18,6 +18,7 @@ interface SplashProps {
 }
 
 const PROVIDERS: { id: AiProvider; label: string }[] = [
+  { id: 'mock', label: 'Mock (local heuristic)' },
   { id: 'deepseek', label: 'DeepSeek' },
   { id: 'grok', label: 'Grok (xAI)' },
   { id: 'openrouter', label: 'OpenRouter' },
@@ -41,14 +42,15 @@ const DIFFICULTIES: { value: DifficultyLevel; label: string; hint: string }[] = 
 
 export function Splash({ onStart, yourTribe }: SplashProps) {
   const [playMode, setPlayMode] = useState<'pass-and-play' | 'vs-ai'>('pass-and-play')
-  const [provider, setProvider] = useState<AiProvider>('deepseek')
+  const [provider, setProvider] = useState<AiProvider>('mock')
   const [apiKey, setApiKey] = useState('')
   const [boardSize, setBoardSize] = useState<BoardSizeOption>(16)
   const [difficulty, setDifficulty] = useState<DifficultyLevel>('normal')
 
   const needsKey = providerNeedsKey(provider)
+  const mockReady = provider === 'mock'
   const keyReady = needsKey && apiKey.trim().length > 0
-  const canStartAi = playMode === 'vs-ai' && keyReady
+  const canStartAi = playMode === 'vs-ai' && (mockReady || keyReady)
   const canStart = playMode === 'pass-and-play' || canStartAi
 
   const handleStart = () => {
@@ -59,7 +61,10 @@ export function Splash({ onStart, yourTribe }: SplashProps) {
     if (!canStartAi) return
     onStart({
       mode: 'vs-ai',
-      ai: { provider, apiKey: apiKey.trim() },
+      ai: {
+        provider,
+        apiKey: mockReady ? 'mock' : apiKey.trim(),
+      },
       boardSize,
       difficulty,
     })
@@ -187,7 +192,7 @@ export function Splash({ onStart, yourTribe }: SplashProps) {
           <span>
             <strong>vs AI</strong>
             <div style={{ fontSize: 12, opacity: 0.75 }}>
-              You play as {yourTribe}; the other tribe is controlled by an LLM.
+              You play as {yourTribe}; the other tribe is controlled by an LLM or mock.
             </div>
           </span>
         </label>
@@ -209,7 +214,21 @@ export function Splash({ onStart, yourTribe }: SplashProps) {
               ))}
             </select>
 
-            {needsKey ? (
+            {provider === 'mock' ? (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  background: 'rgba(80,180,120,0.12)',
+                  border: '1px solid rgba(80,180,120,0.35)',
+                  fontSize: 13,
+                  color: '#8fd9a8',
+                }}
+              >
+                Local heuristic — no API key. Good for testing.
+              </div>
+            ) : needsKey ? (
               <div style={{ marginTop: 12 }}>
                 <label style={{ display: 'block', fontSize: 13, marginBottom: 6, opacity: 0.9 }}>
                   {keyFieldLabel}
@@ -222,11 +241,6 @@ export function Splash({ onStart, yourTribe }: SplashProps) {
                   onChange={(e) => setApiKey(e.target.value)}
                   style={inputStyle}
                 />
-                <div style={{ fontSize: 11, opacity: 0.55, marginTop: 6 }}>
-                  {provider === 'grok'
-                    ? 'Key from console.x.ai. Stored in this browser session only.'
-                    : 'Key stays in this browser session only. See docs/spec/ai.md.'}
-                </div>
               </div>
             ) : (
               <div
