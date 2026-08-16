@@ -2,7 +2,7 @@
  * Apply validated AI actions to GameState.
  */
 import type { GameState, TechId } from './types'
-import { findPath, isReachable, chebyshev } from './pathfinding'
+import { findPath, isReachable, chebyshev, tribeCanClimb } from './pathfinding'
 import { resolveCombat, canAttack } from './combat'
 import { researchTech, endTurn, checkWinConditions } from './state'
 import type { AiAction } from './aiClient'
@@ -52,6 +52,8 @@ export function applyAiActions(
       continue
     }
 
+    const canClimb = tribeCanClimb(state, aiTribe)
+
     if (action.op === 'move') {
       const occupant = Object.values(state.units).find(
         (u) => u.x === tx && u.y === ty && u.health > 0 && u.id !== unit.id
@@ -60,11 +62,11 @@ export function applyAiActions(
         log.push(`skip move occupied`)
         continue
       }
-      if (!isReachable(state, unit.x, unit.y, tx, ty, unit.movement)) {
+      if (!isReachable(state, unit.x, unit.y, tx, ty, unit.movement, { canClimb })) {
         log.push(`skip move unreachable`)
         continue
       }
-      if (!findPath(state, unit.x, unit.y, tx, ty, unit.movement)) {
+      if (!findPath(state, unit.x, unit.y, tx, ty, unit.movement, { canClimb })) {
         log.push(`skip move no path`)
         continue
       }

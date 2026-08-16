@@ -10,7 +10,6 @@ const TERRAIN_COLORS: Record<TerrainType, string> = {
   ice: '#c8e0f0',
 }
 
-/** Mild yellow used only as a mix target for move highlights (not solid gold). */
 const MOVE_TINT = new THREE.Color('#c9b84a')
 
 const TILE_SIZE = 1
@@ -78,7 +77,6 @@ function createBevelledBox(topSize: number, bottomSize: number, height: number):
   return geo
 }
 
-/** Terrain color with a light yellowish hue + slight brightness bump. */
 function tintForMove(base: THREE.Color): THREE.Color {
   const out = base.clone().lerp(MOVE_TINT, 0.28)
   out.multiplyScalar(1.18)
@@ -86,6 +84,12 @@ function tintForMove(base: THREE.Color): THREE.Color {
   out.g = Math.min(1, out.g)
   out.b = Math.min(1, out.b)
   return out
+}
+
+/** Deterministic 0..1 from tile coords. */
+function tileNoise(x: number, y: number, salt = 0): number {
+  const n = Math.sin(x * 12.9898 + y * 78.233 + salt * 45.164) * 43758.5453
+  return n - Math.floor(n)
 }
 
 export function TileGrid({ state, reachableKeys }: TileGridProps) {
@@ -132,8 +136,9 @@ export function TileGrid({ state, reachableKeys }: TileGridProps) {
         const i = cursors[t]
         const pi = i * 3
         map[t].positions[pi] = (x - mapWidth / 2 + 0.5) * TILE_SIZE
+        // Mountain base sits low; stacked cubes build height above
         map[t].positions[pi + 1] =
-          t === 'mountain' ? 0.4 : t === 'water' ? -0.05 : 0.05
+          t === 'mountain' ? 0.12 : t === 'water' ? -0.05 : 0.05
         map[t].positions[pi + 2] = (y - mapHeight / 2 + 0.5) * TILE_SIZE
         map[t].coords[i] = { x, y }
         cursors[t]++
@@ -141,6 +146,33 @@ export function TileGrid({ state, reachableKeys }: TileGridProps) {
     }
 
     return map
+  }, [tiles, mapWidth, mapHeight])
+
+  const mountainStacks = useMemo(() => {
+    const stacks: {
+      wx: number
+      wz: number
+      layers: { y: number; s: number; color: string }[]
+      key: string
+    }[] = []
+    for (let y = 0; y < mapHeight; y++) {
+      for (let x = 0; x < mapWidth; x++) {
+        if (tiles[y][x].terrain !== 'mountain') continue
+        const wx = (x - mapWidth / 2 + 0.5) * TILE_SIZE
+        const wz = (y - mapHeight / 2 + 0.5) * TILE_SIZE
+        const n = tileNoise(x, y)
+        const heightLayers = n > 0.65 ? 3 : n > 0.3 ? 2 : 1
+        const layers: { y: number; s: number; color: string }[] = []
+        // Rock pedestal + stacked cubes tapering upward
+        layers.push({ y: 0.22, s: 0.88, color: '#6e6e6e' })
+        if (heightLayers >= 2) layers.push({ y: 0.55, s: 0.62, color: '#808080' })
+        if (heightLayers >= 3) layers.push({ y: 0.88, s: 0.4, color: '#959595' })
+        // Occasional snow cap
+        if (n > 0.8) layers.push({ y: 1.12, s: 0.28, color: '#e8eef5' })
+        stacks.push({ wx, wz, layers, key: `${x},${y}` })
+      }
+    }
+    return stacks
   }, [tiles, mapWidth, mapHeight])
 
   const groundW = mapWidth * TILE_SIZE + 6
@@ -162,6 +194,7 @@ export function TileGrid({ state, reachableKeys }: TileGridProps) {
       </mesh>
 
       {(Object.keys(groups) as TerrainType[]).map((terrain) => {
+        // Mountain floor still uses flat tile; peaks are separate cubes
         const g = groups[terrain]
         if (g.count === 0) return null
         return (
@@ -175,6 +208,23 @@ export function TileGrid({ state, reachableKeys }: TileGridProps) {
           />
         )
       })}
+
+      {/* Mountains built from stacked cubes */}
+      {mountainStacks.map((m) => (
+        <group key={m.key} position={[m.wx, 0, m.wz]}>
+          {m.layers.map((layer, i) => (
+            <mesh key={i} position={[0, layer.y, 0]}>
+              <boxGeometry args={[layer.s, 0.32, layer.s]} />
+              <meshStandardMaterial
+                color={layer.color}
+                flatShading
+                roughness={0.9}
+                metalness={0.05}
+              />
+            </mesh>
+          ))}
+        </group>
+      ))}
     </group>
   )
 }
@@ -198,7 +248,8 @@ function TerrainInstances({
 
   const geometry = useMemo(() => {
     if (terrain === 'mountain') {
-      return createBevelledBox(TOP_SIZE * 0.95, BOTTOM_SIZE, 0.75)
+      // Low rock base under the cube stack
+      return createBevelledBox(TOP_SIZE, BOTTOM_SIZE, 0.22)
     }
     if (terrain === 'water') {
       return createBevelledBox(TOP_SIZE, BOTTOM_SIZE, 0.2)

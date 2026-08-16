@@ -4,7 +4,7 @@
 import type { AiConfig, AiProvider } from './aiCompact'
 import { AI_SYSTEM_PROMPT, buildAiUserPrompt } from './aiCompact'
 import type { GameState, TribeId, Unit } from './types'
-import { chebyshev, isReachable } from './pathfinding'
+import { chebyshev, isReachable, tribeCanClimb } from './pathfinding'
 import { canAttack } from './combat'
 
 export type AiAction =
@@ -103,6 +103,19 @@ function nearestEnemy(unit: Unit, state: GameState): Unit | null {
 /** Local heuristic AI — no network. Used for mock provider and tests. */
 export function mockHeuristicActions(state: GameState, aiTribe: TribeId): AiAction[] {
   const actions: AiAction[] = []
+  const player = state.players.find((p) => p.tribe === aiTribe)
+  const canClimb = tribeCanClimb(state, aiTribe)
+
+  // If blocked by mountains and can afford Climbing, research it
+  if (
+    player &&
+    !canClimb &&
+    player.stars >= 5 &&
+    !player.researched.includes('climbing')
+  ) {
+    actions.push({ op: 'research', tech: 'climbing' })
+  }
+
   const myUnits = Object.values(state.units).filter(
     (u) => u.tribe === aiTribe && u.health > 0 && !u.acted
   )
@@ -117,7 +130,7 @@ export function mockHeuristicActions(state: GameState, aiTribe: TribeId): AiActi
       continue
     }
 
-    // Step toward enemy (prefer reducing Chebyshev distance)
+    // Prefer steps that reduce distance, avoid mountains without Climbing
     let best: { x: number; y: number; score: number } | null = null
     const range = unit.movement
     for (let dy = -range; dy <= range; dy++) {
@@ -126,13 +139,18 @@ export function mockHeuristicActions(state: GameState, aiTribe: TribeId): AiActi
         const tx = unit.x + dx
         const ty = unit.y + dy
         if (tx < 0 || ty < 0 || tx >= state.mapWidth || ty >= state.mapHeight) continue
+        const tile = state.tiles[ty][tx]
+        if (tile.terrain === 'mountain' && !canClimb) continue
+        if (tile.terrain === 'water') continue
         const occupied = Object.values(state.units).some(
           (u) => u.health > 0 && u.x === tx && u.y === ty
         )
         if (occupied) continue
-        if (!isReachable(state, unit.x, unit.y, tx, ty, range)) continue
+        if (!isReachable(state, unit.x, unit.y, tx, ty, range, { canClimb })) continue
         const score = chebyshev(tx, ty, enemy.x, enemy.y)
-        if (!best || score < best.score) best = { x: tx, y: ty, score }
+        // Prefer lower score; slight preference for non-forest open land
+        const adj = score + (tile.terrain === 'forest' ? 0.1 : 0)
+        if (!best || adj < best.score) best = { x: tx, y: ty, score: adj }
       }
     }
     if (best) {
@@ -150,7 +168,6 @@ export async function requestAiActions(
   config: AiConfig,
   signal?: AbortSignal
 ): Promise<AiAction[]> {
-  // Mock / test path — no network
   if (
     config.provider === 'mock' ||
     config.apiKey === 'mock' ||

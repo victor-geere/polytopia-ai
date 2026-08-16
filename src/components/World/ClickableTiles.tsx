@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import * as THREE from 'three'
 import type { GameState } from '../../game/types'
-import { isReachable } from '../../game/pathfinding'
+import { isReachable, tribeCanClimb } from '../../game/pathfinding'
 import { enemyTilesInRange } from '../../game/combat'
 
 const TILE_SIZE = 1
@@ -10,14 +10,9 @@ interface Props {
   state: GameState
   selectedUnitId: string | null
   onTileClick: (x: number, y: number) => void
-  /** Reports reachable keys so TileGrid can tint meshes */
   onReachableChange?: (keys: Set<string>) => void
 }
 
-/**
- * Invisible raycast plane + red attack markers only.
- * Move targets are shown by recoloring the tile meshes themselves.
- */
 export function ClickableTiles({ state, selectedUnitId, onTileClick }: Props) {
   const { mapWidth, mapHeight } = state
 
@@ -48,7 +43,6 @@ export function ClickableTiles({ state, selectedUnitId, onTileClick }: Props) {
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      {/* Attack targets only — red rings (move highlight is tile recolor) */}
       {attackTargets.map(({ x, y }) => {
         const wx = (x - mapWidth / 2 + 0.5) * TILE_SIZE
         const wz = (y - mapHeight / 2 + 0.5) * TILE_SIZE
@@ -76,7 +70,6 @@ export function ClickableTiles({ state, selectedUnitId, onTileClick }: Props) {
   )
 }
 
-/** Shared helper used by PolytopiaWorld to compute reachable keys for TileGrid. */
 export function computeReachableKeys(
   state: GameState,
   selectedUnitId: string | null
@@ -86,6 +79,7 @@ export function computeReachableKeys(
   const unit = state.units[selectedUnitId]
   if (!unit || unit.acted) return keys
 
+  const canClimb = tribeCanClimb(state, unit.tribe)
   const range = unit.movement
   for (let dy = -range; dy <= range; dy++) {
     for (let dx = -range; dx <= range; dx++) {
@@ -93,7 +87,7 @@ export function computeReachableKeys(
       const tx = unit.x + dx
       const ty = unit.y + dy
       if (tx < 0 || ty < 0 || tx >= state.mapWidth || ty >= state.mapHeight) continue
-      if (isReachable(state, unit.x, unit.y, tx, ty, range)) {
+      if (isReachable(state, unit.x, unit.y, tx, ty, range, { canClimb })) {
         keys.add(`${tx},${ty}`)
       }
     }
