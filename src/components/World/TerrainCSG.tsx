@@ -3,22 +3,19 @@ import * as THREE from 'three'
 import { Brush, Evaluator, ADDITION } from 'three-bvh-csg'
 
 /**
- * Demonstrates three-bvh-csg usage for a few feature meshes.
- * In a full implementation this would be driven by map data (mountain ranges, rivers).
- * CSG is performed once at creation time and cached — never per-frame.
+ * Small decorative CSG feature to prove three-bvh-csg is wired.
+ * Positioned near the map edge so it does not obscure gameplay.
  */
 export function TerrainCSGFeatures() {
   const mountainFeature = useMemo(() => {
     const evaluator = new Evaluator()
 
-    // Base plateau
-    const base = new Brush(new THREE.BoxGeometry(3.5, 0.4, 3.5))
-    base.position.set(4, 0.2, -3)
+    const base = new Brush(new THREE.BoxGeometry(2.2, 0.35, 2.2))
+    base.position.set(-9, 0.2, -9)
     base.updateMatrixWorld()
 
-    // Peak
-    const peak = new Brush(new THREE.ConeGeometry(1.2, 1.8, 5))
-    peak.position.set(4, 1.3, -3)
+    const peak = new Brush(new THREE.ConeGeometry(0.9, 1.4, 5))
+    peak.position.set(-9, 1.1, -9)
     peak.updateMatrixWorld()
 
     const result = evaluator.evaluate(base, peak, ADDITION)
@@ -26,8 +23,8 @@ export function TerrainCSGFeatures() {
   }, [])
 
   return (
-    <mesh geometry={mountainFeature} position={[0, 0, 0]} castShadow={false}>
-      <meshStandardMaterial color="#5a5a5a" flatShading />
+    <mesh geometry={mountainFeature} castShadow={false}>
+      <meshStandardMaterial color="#5a5a5a" flatShading roughness={0.9} />
     </mesh>
   )
 }

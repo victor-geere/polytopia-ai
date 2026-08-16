@@ -4,13 +4,13 @@ import type { GameState, Unit } from '../../game/types'
 const TILE_SIZE = 1
 const TRIBE_COLORS: Record<string, string> = {
   imperius: '#4a90d9',
-  bardur: '#8b5a2b',
+  bardur: '#c47a3a',
   'xin-xi': '#cc3333',
   oumaji: '#e6b800',
   kickoo: '#33aa77',
   hoodrick: '#66aa33',
   luxidoor: '#9933cc',
-  vengir: '#555555',
+  vengir: '#888888',
   zebasi: '#dd8833',
   'ai-mo': '#66ccff',
   quetzali: '#33cc99',
@@ -55,37 +55,47 @@ function UnitMesh({
   selected: boolean
   onSelect: () => void
 }) {
-  const wx = (unit.x - mapWidth / 2) * TILE_SIZE
-  const wz = (unit.y - mapHeight / 2) * TILE_SIZE
+  // Match TileGrid centering ( +0.5 offset )
+  const wx = (unit.x - mapWidth / 2 + 0.5) * TILE_SIZE
+  const wz = (unit.y - mapHeight / 2 + 0.5) * TILE_SIZE
   const color = TRIBE_COLORS[unit.tribe] ?? '#ffffff'
 
   return (
     <RigidBody
       type="kinematicPosition"
-      position={[wx, 0.55, wz]}
+      position={[wx, 0.45, wz]}
       colliders="hull"
       enabledRotations={[false, false, false]}
     >
-      <mesh
+      <group
         onClick={(e) => {
           e.stopPropagation()
           onSelect()
         }}
-        castShadow={false}
       >
-        <capsuleGeometry args={[0.22, 0.35, 4, 8]} />
-        <meshStandardMaterial
-          color={selected ? '#ffffff' : color}
-          flatShading
-          emissive={selected ? color : '#000000'}
-          emissiveIntensity={selected ? 0.35 : 0}
-        />
-      </mesh>
-      {/* Simple team flag / head indicator */}
-      <mesh position={[0, 0.55, 0]}>
-        <sphereGeometry args={[0.12, 6, 6]} />
-        <meshStandardMaterial color={color} flatShading />
-      </mesh>
+        {/* Body */}
+        <mesh castShadow={false} position={[0, 0.15, 0]}>
+          <capsuleGeometry args={[0.28, 0.35, 4, 8]} />
+          <meshStandardMaterial
+            color={selected ? '#ffffff' : color}
+            flatShading
+            emissive={selected ? color : '#000000'}
+            emissiveIntensity={selected ? 0.4 : 0}
+          />
+        </mesh>
+        {/* Head */}
+        <mesh position={[0, 0.55, 0]}>
+          <sphereGeometry args={[0.18, 8, 8]} />
+          <meshStandardMaterial color={color} flatShading />
+        </mesh>
+        {/* Selection ring */}
+        {selected && (
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+            <ringGeometry args={[0.4, 0.5, 16]} />
+            <meshBasicMaterial color="#ffd700" transparent opacity={0.85} />
+          </mesh>
+        )}
+      </group>
     </RigidBody>
   )
 }

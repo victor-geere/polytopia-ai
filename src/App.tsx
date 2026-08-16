@@ -79,8 +79,6 @@ function App() {
     [selectedUnitId, state, currentPlayer]
   )
 
-  // Expose a simple way to click tiles via a global helper for now
-  // (full tile raycasting can be added later)
   ;(window as any).__polytopiaTryAction = tryMoveOrAttack
 
   const handleEndTurn = () => {
@@ -96,10 +94,18 @@ function App() {
     })
   }
 
+  // Camera sits above the center of the 16x16 map
+  const camDist = 14
+
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative', touchAction: 'none' }}>
       <Canvas
-        camera={{ position: [10, 16, 10], fov: 45, near: 0.1, far: 200 }}
+        camera={{
+          position: [camDist * 0.7, camDist * 0.9, camDist * 0.7],
+          fov: 50,
+          near: 0.1,
+          far: 200,
+        }}
         dpr={[1, 1.5]}
         performance={{ min: 0.5 }}
         gl={{
@@ -110,9 +116,10 @@ function App() {
         style={{ width: '100%', height: '100%' }}
         onPointerMissed={() => setSelectedUnitId(null)}
       >
-        <color attach="background" args={['#1a1a2e']} />
-        <ambientLight intensity={0.5} />
-        <directionalLight position={[12, 25, 8]} intensity={1.15} />
+        <color attach="background" args={['#0f1420']} />
+        <ambientLight intensity={0.55} />
+        <directionalLight position={[10, 20, 8]} intensity={1.25} />
+        <hemisphereLight args={['#87a0c0', '#2a3a2a', 0.35]} />
 
         <Suspense fallback={null}>
           <PolytopiaWorld
@@ -123,12 +130,11 @@ function App() {
         </Suspense>
 
         <OrbitControls
-          maxPolarAngle={Math.PI / 2.15}
-          minDistance={6}
-          maxDistance={45}
+          maxPolarAngle={Math.PI / 2.2}
+          minDistance={8}
+          maxDistance={40}
           target={[0, 0, 0]}
           enablePan={true}
-          // Mobile-friendly damping
           enableDamping
           dampingFactor={0.12}
         />
