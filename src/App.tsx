@@ -28,16 +28,19 @@ function App() {
       const unit = state.units[selectedUnitId]
       if (!unit || unit.tribe !== currentPlayer.tribe || unit.acted) return
 
-      const enemy = Object.values(state.units).find(
-        (u) => u.x === targetX && u.y === targetY && u.tribe !== unit.tribe && u.health > 0
+      // Don't move onto your own unit
+      const occupant = Object.values(state.units).find(
+        (u) => u.x === targetX && u.y === targetY && u.health > 0
       )
+      if (occupant && occupant.tribe === unit.tribe) return
 
-      if (enemy) {
-        const dist = chebyshev(unit.x, unit.y, enemy.x, enemy.y)
-        if (!canAttack(unit, enemy, dist)) return
+      // Attack enemy
+      if (occupant && occupant.tribe !== unit.tribe) {
+        const dist = chebyshev(unit.x, unit.y, occupant.x, occupant.y)
+        if (!canAttack(unit, occupant, dist)) return
 
-        const tile = state.tiles[enemy.y][enemy.x]
-        const { attacker, defender } = resolveCombat(unit, enemy, tile)
+        const tile = state.tiles[occupant.y][occupant.x]
+        const { attacker, defender } = resolveCombat(unit, occupant, tile)
 
         setState((prev) => {
           const units = { ...prev.units }
@@ -59,6 +62,7 @@ function App() {
         return
       }
 
+      // Move to empty tile
       if (!isReachable(state, unit.x, unit.y, targetX, targetY, unit.movement)) return
       const path = findPath(state, unit.x, unit.y, targetX, targetY, unit.movement)
       if (!path) return
@@ -79,8 +83,6 @@ function App() {
     [selectedUnitId, state, currentPlayer]
   )
 
-  ;(window as any).__polytopiaTryAction = tryMoveOrAttack
-
   const handleEndTurn = () => {
     setState((prev) => endTurn(prev))
     setSelectedUnitId(null)
@@ -94,7 +96,6 @@ function App() {
     })
   }
 
-  // Camera sits above the center of the 16x16 map
   const camDist = 14
 
   return (
@@ -126,6 +127,7 @@ function App() {
             state={state}
             selectedUnitId={selectedUnitId}
             onSelectUnit={setSelectedUnitId}
+            onTileClick={tryMoveOrAttack}
           />
         </Suspense>
 
@@ -137,6 +139,8 @@ function App() {
           enablePan={true}
           enableDamping
           dampingFactor={0.12}
+          // Prevent orbit from eating the first tap on mobile when possible
+          makeDefault
         />
       </Canvas>
 
