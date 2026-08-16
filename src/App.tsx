@@ -5,6 +5,7 @@ import { createInitialState, endTurn, researchTech } from './game'
 import { findPath, isReachable, chebyshev } from './game/pathfinding'
 import { resolveCombat, canAttack } from './game/combat'
 import { PolytopiaWorld } from './components/World/PolytopiaWorld'
+import { CameraFocus } from './components/World/CameraFocus'
 import { HUD } from './components/UI/HUD'
 import { Splash } from './components/UI/Splash'
 import { Toast } from './components/UI/Toast'
@@ -28,12 +29,13 @@ function App() {
   const [showTech, setShowTech] = useState(false)
   const [started, setStarted] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [focusKey, setFocusKey] = useState(0)
   const prevPlayerIndex = useRef(0)
 
   const currentPlayer = state.players[state.currentPlayerIndex]
   const yourTribeName = TRIBE_NAMES[currentPlayer.tribe] ?? currentPlayer.tribe
 
-  // Guide toast when game starts or turn changes
+  // Guide toast + camera focus when turn / player changes
   useEffect(() => {
     if (!started) return
 
@@ -47,6 +49,7 @@ function App() {
       setToast(
         `You are ${tribeLabel.toUpperCase()}. Tap your unit, then tap a gold tile to move.`
       )
+      setFocusKey((k) => k + 1)
     }
     prevPlayerIndex.current = state.currentPlayerIndex
   }, [started, state.currentPlayerIndex, state.turn, state.gameOver, state.winner, currentPlayer.tribe])
@@ -160,6 +163,7 @@ function App() {
 
   const handleStart = () => {
     setStarted(true)
+    setFocusKey((k) => k + 1)
     setToast(
       `You are ${yourTribeName.toUpperCase()}. Tap your unit, then a gold tile to move.`
     )
@@ -205,6 +209,7 @@ function App() {
             onSelectUnit={handleSelectUnit}
             onTileClick={tryMoveOrAttack}
           />
+          <CameraFocus state={state} focusKey={focusKey} />
         </Suspense>
 
         <OrbitControls
