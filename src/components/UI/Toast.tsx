@@ -1,30 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 
 interface ToastProps {
   message: string | null
   duration?: number
   onDone?: () => void
-  /** When true, fills parent flex cell instead of floating alone */
-  embedded?: boolean
 }
 
-const cardStyle: React.CSSProperties = {
-  background: 'rgba(0,0,0,0.8)',
-  color: '#eee',
-  padding: '10px 12px',
-  borderRadius: 10,
-  fontFamily: 'system-ui, -apple-system, sans-serif',
-  fontSize: 13,
-  lineHeight: 1.4,
-  border: '1px solid rgba(255,255,255,0.1)',
-  boxSizing: 'border-box',
-  height: '100%',
-  display: 'flex',
-  flexDirection: 'column',
-  justifyContent: 'center',
-}
-
-export function Toast({ message, duration = 4500, onDone, embedded }: ToastProps) {
+/**
+ * Full-width mobile popover that sits over the bottom unit/train cards.
+ * Tap anywhere on the sheet to dismiss.
+ */
+export function Toast({ message, duration = 4500, onDone }: ToastProps) {
   const [visible, setVisible] = useState(false)
   const [text, setText] = useState<string | null>(null)
 
@@ -42,63 +28,69 @@ export function Toast({ message, duration = 4500, onDone, embedded }: ToastProps
     return () => clearTimeout(t)
   }, [message, duration, onDone])
 
-  if (!text && !embedded) return null
+  if (!text) return null
 
   const dismiss = () => {
     setVisible(false)
     onDone?.()
   }
 
-  const body = (
-    <div
-      onClick={text && visible ? dismiss : undefined}
-      onTouchEnd={
-        text && visible
-          ? (e) => {
-              e.preventDefault()
-              dismiss()
-            }
-          : undefined
-      }
-      role={text && visible ? 'button' : undefined}
-      aria-label={text && visible ? 'Dismiss message' : undefined}
-      style={{
-        ...cardStyle,
-        opacity: visible && text ? 1 : embedded ? 0.55 : 0,
-        cursor: visible && text ? 'pointer' : 'default',
-        transition: 'opacity 0.25s ease',
-        minHeight: 72,
-      }}
-    >
-      {visible && text ? (
-        <>
-          <div>{text}</div>
-          <div style={{ fontSize: 11, opacity: 0.45, marginTop: 6 }}>Tap to dismiss</div>
-        </>
-      ) : (
-        <div style={{ opacity: 0.6 }}>Tips appear here</div>
-      )}
-    </div>
-  )
-
-  if (embedded) {
-    return <div style={{ flex: 1, minWidth: 0, height: '100%' }}>{body}</div>
-  }
-
-  if (!text) return null
-
   return (
     <div
+      onClick={dismiss}
+      onTouchEnd={(e) => {
+        e.preventDefault()
+        dismiss()
+      }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Message"
       style={{
-        position: 'absolute',
-        bottom: 'max(16px, env(safe-area-inset-bottom, 16px))',
-        left: 12,
-        right: 12,
-        zIndex: 40,
+        ...overlayStyle,
+        opacity: visible ? 1 : 0,
         pointerEvents: visible ? 'auto' : 'none',
+        transform: visible ? 'translateY(0)' : 'translateY(12px)',
       }}
     >
-      {body}
+      <div style={sheetStyle}>
+        <div style={{ fontSize: 15, lineHeight: 1.45, fontWeight: 500 }}>{text}</div>
+        <div style={{ fontSize: 12, opacity: 0.5, marginTop: 10, textAlign: 'center' }}>
+          Tap to dismiss
+        </div>
+      </div>
     </div>
   )
+}
+
+const overlayStyle: CSSProperties = {
+  position: 'absolute',
+  left: 0,
+  right: 0,
+  // Cover the bottom unit + train card row
+  bottom: 0,
+  zIndex: 60,
+  padding: '12px 12px max(12px, env(safe-area-inset-bottom, 12px))',
+  boxSizing: 'border-box',
+  background: 'rgba(0,0,0,0.45)',
+  transition: 'opacity 0.22s ease, transform 0.22s ease',
+  display: 'flex',
+  alignItems: 'flex-end',
+  // Tall enough to fully cover the bottom cards row
+  minHeight: 140,
+}
+
+const sheetStyle: CSSProperties = {
+  width: '100%',
+  background: 'rgba(12,12,22,0.97)',
+  color: '#f0f0f0',
+  padding: '18px 16px',
+  borderRadius: 14,
+  fontFamily: 'system-ui, -apple-system, sans-serif',
+  border: '1px solid rgba(255,255,255,0.14)',
+  boxShadow: '0 -8px 32px rgba(0,0,0,0.45)',
+  boxSizing: 'border-box',
+  minHeight: 100,
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'center',
 }

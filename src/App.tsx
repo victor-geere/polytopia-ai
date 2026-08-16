@@ -5,7 +5,6 @@ import { createInitialState, endTurn, researchTech, trainUnit } from './game'
 import { findPath, isReachable, chebyshev } from './game/pathfinding'
 import { resolveCombat, canAttack } from './game/combat'
 import { isRangedUnit } from './game/units'
-import type { AiConfig } from './game/aiCompact'
 import { PolytopiaWorld } from './components/World/PolytopiaWorld'
 import { CameraFocus } from './components/World/CameraFocus'
 import { HUD } from './components/UI/HUD'
@@ -43,7 +42,6 @@ function App() {
   const [toast, setToast] = useState<string | null>(null)
   const [focusKey, setFocusKey] = useState(0)
   const [playMode, setPlayMode] = useState<'pass-and-play' | 'vs-ai'>('pass-and-play')
-  const [aiConfig, setAiConfig] = useState<AiConfig | null>(null)
   const prevPlayerIndex = useRef(0)
 
   const currentPlayer = state.players[state.currentPlayerIndex]
@@ -183,9 +181,7 @@ function App() {
       }
       setSelectedUnitId(id)
       if (isRangedUnit(unit.type)) {
-        setToast(
-          `Archer selected (range ${unit.range}). Gold tiles = move, red = attack.`
-        )
+        setToast(`Archer selected (range ${unit.range}). Gold tiles = move, red = attack.`)
       } else {
         setToast('Gold tiles show where you can move. Tap one to move.')
       }
@@ -244,13 +240,11 @@ function App() {
       tribes: ['imperius', 'bardur'],
     })
 
-    // Apply difficulty: starting stars + max turns
     next.maxTurns = maxTurns
     next.players = next.players.map((p) => ({ ...p, stars: startingStars }))
 
     setState(next)
     setPlayMode(config.mode)
-    setAiConfig(config.ai ?? null)
     if (config.ai?.apiKey) {
       try {
         sessionStorage.setItem('polytopia_ai_provider', config.ai.provider)
@@ -271,7 +265,6 @@ function App() {
     )
   }
 
-  // Camera distance scales a bit with board size
   const camDist = 8 + state.mapWidth * 0.4
 
   return (

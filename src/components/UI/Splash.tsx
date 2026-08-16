@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import type { AiConfig, AiProvider } from '../../game/aiCompact'
 
 export type BoardSizeOption = 8 | 12 | 16 | 20 | 24
@@ -260,14 +260,14 @@ export function Splash({ onStart, yourTribe }: SplashProps) {
   )
 }
 
-const radioRow: React.CSSProperties = {
+const radioRow: CSSProperties = {
   display: 'flex',
   gap: 10,
   alignItems: 'flex-start',
   cursor: 'pointer',
 }
 
-const selectStyle: React.CSSProperties = {
+const selectStyle: CSSProperties = {
   width: '100%',
   padding: '10px 12px',
   borderRadius: 8,
@@ -277,7 +277,7 @@ const selectStyle: React.CSSProperties = {
   fontSize: 14,
 }
 
-const inputStyle: React.CSSProperties = {
+const inputStyle: CSSProperties = {
   width: '100%',
   boxSizing: 'border-box',
   padding: '10px 12px',

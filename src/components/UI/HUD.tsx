@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import type { GameState, TechId, UnitType } from '../../game/types'
 import { TECH_TREE, canResearch, researchCost } from '../../game/techTree'
 import { trainableUnits } from '../../game/units'
@@ -15,7 +16,7 @@ interface HUDProps {
   onToastDone: () => void
 }
 
-const panelStyle: React.CSSProperties = {
+const panelStyle: CSSProperties = {
   background: 'rgba(0,0,0,0.8)',
   color: '#eee',
   padding: '10px 12px',
@@ -24,8 +25,7 @@ const panelStyle: React.CSSProperties = {
   fontSize: 13,
   border: '1px solid rgba(255,255,255,0.1)',
   boxSizing: 'border-box',
-  minHeight: 72,
-  height: '100%',
+  minHeight: 96,
 }
 
 export function HUD({
@@ -88,39 +88,7 @@ export function HUD({
         </div>
       </div>
 
-      {selected && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 70,
-            left: 16,
-            background: 'rgba(0,0,0,0.75)',
-            color: '#eee',
-            padding: '10px 14px',
-            borderRadius: 10,
-            fontFamily: 'system-ui, sans-serif',
-            fontSize: 13,
-            zIndex: 10,
-            border: '1px solid rgba(255,255,255,0.1)',
-          }}
-        >
-          <div style={{ fontWeight: 700 }}>
-            {selected.type.toUpperCase()}
-            {selected.range > 1 ? ' 🏹' : ''}
-          </div>
-          <div>
-            HP {selected.health}/{selected.maxHealth}
-          </div>
-          <div>
-            Move {selected.movement}/{selected.maxMovement}
-          </div>
-          <div>
-            Atk {selected.attack} · Def {selected.defense} · Range {selected.range}
-          </div>
-        </div>
-      )}
-
-      {/* Bottom bar: toast | train — full width with margin */}
+      {/* Bottom cards: selected unit | train — equal style, full width */}
       <div
         style={{
           position: 'absolute',
@@ -134,13 +102,35 @@ export function HUD({
           pointerEvents: 'auto',
         }}
       >
-        <Toast message={toast} onDone={onToastDone} embedded />
+        <div style={{ ...panelStyle, flex: 1, minWidth: 0 }}>
+          {selected ? (
+            <>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                {selected.type.toUpperCase()}
+                {selected.range > 1 ? ' 🏹' : ''}
+              </div>
+              <div>
+                HP {selected.health}/{selected.maxHealth}
+              </div>
+              <div>
+                Move {selected.movement}/{selected.maxMovement}
+              </div>
+              <div style={{ opacity: 0.85 }}>
+                Atk {selected.attack} · Def {selected.defense} · R{selected.range}
+              </div>
+            </>
+          ) : (
+            <div style={{ opacity: 0.55, fontSize: 12 }}>
+              Select a unit to see stats
+            </div>
+          )}
+        </div>
 
         <div
           style={{
             ...panelStyle,
             flex: '0 0 auto',
-            width: 'min(42%, 200px)',
+            width: 'min(46%, 210px)',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'center',
@@ -178,6 +168,9 @@ export function HUD({
           </div>
         </div>
       </div>
+
+      {/* Popover covers the bottom card row when a message is active */}
+      <Toast message={toast} onDone={onToastDone} />
 
       {showTech && (
         <div
@@ -277,7 +270,7 @@ export function HUD({
   )
 }
 
-const btnStyle: React.CSSProperties = {
+const btnStyle: CSSProperties = {
   padding: '8px 14px',
   fontSize: 14,
   fontWeight: 600,
