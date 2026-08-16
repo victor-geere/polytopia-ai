@@ -106,7 +106,6 @@ function cellBlock(
   return block
 }
 
-/** Rows of columns: board[y][x] = cell block */
 export function boardToCompact(state: GameState): Record<string, unknown>[][] {
   const unitAt = new Map<string, Unit>()
   for (const u of Object.values(state.units)) {
@@ -170,18 +169,18 @@ export function buildAiUserPrompt(
   ].join('\n')
 }
 
-/** Providers that accept an API key in the splash UI today. */
-export const KEYED_PROVIDERS = ['deepseek', 'grok'] as const
+export const KEYED_PROVIDERS = ['deepseek', 'grok', 'mock'] as const
 
 export type AiProvider =
   | 'deepseek'
   | 'grok'
+  | 'mock'
   | 'openrouter'
   | 'ai21'
   | 'huggingface'
 
 export function providerNeedsKey(p: AiProvider): boolean {
-  return (KEYED_PROVIDERS as readonly string[]).includes(p)
+  return p === 'deepseek' || p === 'grok'
 }
 
 export function providerLabel(p: AiProvider): string {
@@ -190,6 +189,8 @@ export function providerLabel(p: AiProvider): string {
       return 'DeepSeek'
     case 'grok':
       return 'Grok (xAI)'
+    case 'mock':
+      return 'Mock (local)'
     case 'openrouter':
       return 'OpenRouter'
     case 'ai21':

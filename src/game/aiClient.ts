@@ -1,9 +1,11 @@
 /**
- * LLM provider clients for AI turns (Grok / xAI, DeepSeek).
+ * LLM provider clients for AI turns (Grok / xAI, DeepSeek) + local mock.
  */
 import type { AiConfig, AiProvider } from './aiCompact'
 import { AI_SYSTEM_PROMPT, buildAiUserPrompt } from './aiCompact'
-import type { GameState, TribeId } from './types'
+import type { GameState, TribeId, Unit } from './types'
+import { chebyshev, isReachable } from './pathfinding'
+import { canAttack } from './combat'
 
 export type AiAction =
   | { op: 'move'; id: string; to: [number, number] }
@@ -33,10 +35,8 @@ function endpointFor(provider: AiProvider): ProviderEndpoint | null {
   }
 }
 
-/** Extract a JSON array from model text (handles prose wrappers). */
 export function parseActionsFromText(text: string): AiAction[] {
   const trimmed = text.trim()
-  // Prefer first [...] block
   const start = trimmed.indexOf('[')
   const end = trimmed.lastIndexOf(']')
   if (start >= 0 && end > start) {
@@ -47,7 +47,6 @@ export function parseActionsFromText(text: string): AiAction[] {
       /* fall through */
     }
   }
-  // Or { "actions": [...] }
   try {
     const obj = JSON.parse(trimmed)
     if (Array.isArray(obj)) return normalizeActions(obj)
@@ -73,7 +72,7 @@ function normalizeActions(raw: unknown[]): AiAction[] {
       continue
     }
     if ((op === 'move' || op === 'attack') && typeof o.id === 'string') {
-      let to = o.to
+      const to = o.to
       if (Array.isArray(to) && to.length >= 2) {
         out.push({
           op,
@@ -87,12 +86,81 @@ function normalizeActions(raw: unknown[]): AiAction[] {
   return out.slice(0, 8)
 }
 
+function nearestEnemy(unit: Unit, state: GameState): Unit | null {
+  let best: Unit | null = null
+  let bestD = Infinity
+  for (const u of Object.values(state.units)) {
+    if (u.health <= 0 || u.tribe === unit.tribe) continue
+    const d = chebyshev(unit.x, unit.y, u.x, u.y)
+    if (d < bestD) {
+      bestD = d
+      best = u
+    }
+  }
+  return best
+}
+
+/** Local heuristic AI — no network. Used for mock provider and tests. */
+export function mockHeuristicActions(state: GameState, aiTribe: TribeId): AiAction[] {
+  const actions: AiAction[] = []
+  const myUnits = Object.values(state.units).filter(
+    (u) => u.tribe === aiTribe && u.health > 0 && !u.acted
+  )
+
+  for (const unit of myUnits) {
+    const enemy = nearestEnemy(unit, state)
+    if (!enemy) continue
+
+    const dist = chebyshev(unit.x, unit.y, enemy.x, enemy.y)
+    if (canAttack(unit, enemy, dist)) {
+      actions.push({ op: 'attack', id: unit.id, to: [enemy.x, enemy.y] })
+      continue
+    }
+
+    // Step toward enemy (prefer reducing Chebyshev distance)
+    let best: { x: number; y: number; score: number } | null = null
+    const range = unit.movement
+    for (let dy = -range; dy <= range; dy++) {
+      for (let dx = -range; dx <= range; dx++) {
+        if (dx === 0 && dy === 0) continue
+        const tx = unit.x + dx
+        const ty = unit.y + dy
+        if (tx < 0 || ty < 0 || tx >= state.mapWidth || ty >= state.mapHeight) continue
+        const occupied = Object.values(state.units).some(
+          (u) => u.health > 0 && u.x === tx && u.y === ty
+        )
+        if (occupied) continue
+        if (!isReachable(state, unit.x, unit.y, tx, ty, range)) continue
+        const score = chebyshev(tx, ty, enemy.x, enemy.y)
+        if (!best || score < best.score) best = { x: tx, y: ty, score }
+      }
+    }
+    if (best) {
+      actions.push({ op: 'move', id: unit.id, to: [best.x, best.y] })
+    }
+  }
+
+  actions.push({ op: 'end' })
+  return actions
+}
+
 export async function requestAiActions(
   state: GameState,
   aiTribe: TribeId,
   config: AiConfig,
   signal?: AbortSignal
 ): Promise<AiAction[]> {
+  // Mock / test path — no network
+  if (
+    config.provider === 'mock' ||
+    config.apiKey === 'mock' ||
+    config.apiKey === 'test'
+  ) {
+    await new Promise((r) => setTimeout(r, 80))
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    return mockHeuristicActions(state, aiTribe)
+  }
+
   const ep = endpointFor(config.provider)
   if (!ep) {
     throw new Error(`Provider ${config.provider} is not available yet`)
