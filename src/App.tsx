@@ -10,7 +10,6 @@ import {
 } from './game'
 import { findPath, isReachable, chebyshev } from './game/pathfinding'
 import { resolveCombat, canAttack } from './game/combat'
-import { isRangedUnit } from './game/units'
 import type { AiConfig } from './game/aiCompact'
 import { requestAiActions, mockHeuristicActions } from './game/aiClient'
 import { applyAiActions } from './game/aiRunner'
@@ -54,7 +53,6 @@ function forceVictoryState(winner: TribeId): GameState {
     mapHeight: 8,
     tribes: ['imperius', 'bardur'],
   })
-  // Wipe loser units
   const units: typeof s.units = {}
   for (const u of Object.values(s.units)) {
     if (u.tribe === winner) units[u.id] = u
@@ -117,7 +115,6 @@ function App() {
     !!aiConfig &&
     (QUERY.autoplay || currentPlayer.tribe !== humanTribe)
 
-  // Flatten autoplay map to land so pathing never stalls
   useEffect(() => {
     if (!QUERY.autoplay || QUERY.winner) return
     setState((prev) => {
@@ -162,7 +159,6 @@ function App() {
     aiConfig?.provider,
   ])
 
-  // Sequential autoplay loop (avoids overlapping effect runs)
   useEffect(() => {
     if (!started || !isAiTurn || !aiConfig || state.gameOver) return
     if (runningRef.current) return
@@ -175,7 +171,6 @@ function App() {
     ;(async () => {
       try {
         const snapshot = stateRef.current
-        // Prefer pure mock heuristic in autoplay (no artificial delay beyond one frame)
         const actions =
           aiConfig.provider === 'mock'
             ? mockHeuristicActions(snapshot, tribe)
