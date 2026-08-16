@@ -12,7 +12,7 @@ interface Props {
 }
 
 /**
- * Smoothly pans OrbitControls target (and camera offset) toward the
+ * Smoothly pans OrbitControls target (and camera) toward the
  * centroid of the current player's units/cities after each turn.
  */
 export function CameraFocus({ state, focusKey }: Props) {
@@ -54,20 +54,8 @@ export function CameraFocus({ state, focusKey }: Props) {
     const target = controls.target as THREE.Vector3
     const cam = controls.object as THREE.Camera
 
-    // Lerp look-at target
+    // Lerp look-at target toward the active tribe
     target.lerp(goal.current, Math.min(1, dt * 3.5))
-
-    // Keep the same camera offset relative to target by sliding the camera
-    const offset = new THREE.Vector3().subVectors(cam.position, target)
-    // Recompute desired camera position = goal + same offset direction/length from previous frame is messy;
-    // instead gently pull camera so it looks at the new target while preserving distance.
-    const desired = goal.current.clone().add(
-      new THREE.Vector3(8, 11, 8).normalize().multiplyScalar(
-        cam.position.distanceTo(target) || 16
-      )
-    )
-    // Simpler: move camera by the same delta as target movement this frame
-    // (already handled roughly by OrbitControls when target moves if we call update)
 
     // Nudge camera toward a comfortable offset from the goal
     const comfortable = new THREE.Vector3(
@@ -83,9 +71,6 @@ export function CameraFocus({ state, focusKey }: Props) {
       target.copy(goal.current)
       animating.current = false
     }
-
-    // silence unused
-    void offset
   })
 
   return null
