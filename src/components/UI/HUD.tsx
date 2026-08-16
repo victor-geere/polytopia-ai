@@ -1,6 +1,7 @@
 import type { GameState, TechId, UnitType } from '../../game/types'
 import { TECH_TREE, canResearch, researchCost } from '../../game/techTree'
 import { trainableUnits } from '../../game/units'
+import { Toast } from './Toast'
 
 interface HUDProps {
   state: GameState
@@ -10,6 +11,21 @@ interface HUDProps {
   onEndTurn: () => void
   onResearch: (techId: TechId) => void
   onTrain: (unitType: UnitType) => void
+  toast: string | null
+  onToastDone: () => void
+}
+
+const panelStyle: React.CSSProperties = {
+  background: 'rgba(0,0,0,0.8)',
+  color: '#eee',
+  padding: '10px 12px',
+  borderRadius: 10,
+  fontFamily: 'system-ui, sans-serif',
+  fontSize: 13,
+  border: '1px solid rgba(255,255,255,0.1)',
+  boxSizing: 'border-box',
+  minHeight: 72,
+  height: '100%',
 }
 
 export function HUD({
@@ -20,6 +36,8 @@ export function HUD({
   onEndTurn,
   onResearch,
   onTrain,
+  toast,
+  onToastDone,
 }: HUDProps) {
   const player = state.players[state.currentPlayerIndex]
   const cityCount = player.cities.length
@@ -70,57 +88,11 @@ export function HUD({
         </div>
       </div>
 
-      {/* Train panel — warriors + unlocked units (e.g. Archer after Archery) */}
-      {trainList.length > 0 && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 20,
-            right: 16,
-            background: 'rgba(0,0,0,0.8)',
-            color: '#eee',
-            padding: '10px 12px',
-            borderRadius: 10,
-            fontFamily: 'system-ui, sans-serif',
-            fontSize: 13,
-            zIndex: 10,
-            maxWidth: 200,
-          }}
-        >
-          <div style={{ fontWeight: 700, marginBottom: 8, opacity: 0.85 }}>Train</div>
-          {trainList.map((u) => {
-            const canAfford = player.stars >= u.cost
-            return (
-              <button
-                key={u.type}
-                disabled={!canAfford || state.gameOver}
-                onClick={() => onTrain(u.type)}
-                style={{
-                  ...btnStyle,
-                  display: 'block',
-                  width: '100%',
-                  marginBottom: 6,
-                  background: canAfford ? (u.ranged ? '#6b4c9a' : '#3a3a5c') : '#444',
-                  cursor: canAfford ? 'pointer' : 'not-allowed',
-                  textAlign: 'left',
-                  fontSize: 12,
-                  padding: '8px 10px',
-                }}
-              >
-                {u.name}
-                {u.ranged ? ' 🏹' : ''} · ☆{u.cost}
-                {u.range > 1 ? ` · R${u.range}` : ''}
-              </button>
-            )
-          })}
-        </div>
-      )}
-
       {selected && (
         <div
           style={{
             position: 'absolute',
-            bottom: 20,
+            top: 70,
             left: 16,
             background: 'rgba(0,0,0,0.75)',
             color: '#eee',
@@ -129,6 +101,7 @@ export function HUD({
             fontFamily: 'system-ui, sans-serif',
             fontSize: 13,
             zIndex: 10,
+            border: '1px solid rgba(255,255,255,0.1)',
           }}
         >
           <div style={{ fontWeight: 700 }}>
@@ -147,6 +120,65 @@ export function HUD({
         </div>
       )}
 
+      {/* Bottom bar: toast | train — full width with margin */}
+      <div
+        style={{
+          position: 'absolute',
+          left: 12,
+          right: 12,
+          bottom: 'max(12px, env(safe-area-inset-bottom, 12px))',
+          display: 'flex',
+          gap: 10,
+          alignItems: 'stretch',
+          zIndex: 40,
+          pointerEvents: 'auto',
+        }}
+      >
+        <Toast message={toast} onDone={onToastDone} embedded />
+
+        <div
+          style={{
+            ...panelStyle,
+            flex: '0 0 auto',
+            width: 'min(42%, 200px)',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 6, opacity: 0.85 }}>Train</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {trainList.length === 0 ? (
+              <div style={{ fontSize: 12, opacity: 0.55 }}>No units yet</div>
+            ) : (
+              trainList.map((u) => {
+                const canAfford = player.stars >= u.cost
+                return (
+                  <button
+                    key={u.type}
+                    disabled={!canAfford || state.gameOver}
+                    onClick={() => onTrain(u.type)}
+                    style={{
+                      ...btnStyle,
+                      width: '100%',
+                      background: canAfford ? (u.ranged ? '#6b4c9a' : '#3a3a5c') : '#444',
+                      cursor: canAfford ? 'pointer' : 'not-allowed',
+                      textAlign: 'left',
+                      fontSize: 12,
+                      padding: '6px 8px',
+                    }}
+                  >
+                    {u.name}
+                    {u.ranged ? ' 🏹' : ''} · ☆{u.cost}
+                    {u.range > 1 ? ` · R${u.range}` : ''}
+                  </button>
+                )
+              })
+            )}
+          </div>
+        </div>
+      </div>
+
       {showTech && (
         <div
           style={{
@@ -154,7 +186,7 @@ export function HUD({
             top: 70,
             right: 16,
             width: 280,
-            maxHeight: '60vh',
+            maxHeight: '55vh',
             overflowY: 'auto',
             background: 'rgba(15,15,30,0.92)',
             color: '#eee',

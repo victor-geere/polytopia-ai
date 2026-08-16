@@ -4,9 +4,27 @@ interface ToastProps {
   message: string | null
   duration?: number
   onDone?: () => void
+  /** When true, fills parent flex cell instead of floating alone */
+  embedded?: boolean
 }
 
-export function Toast({ message, duration = 4500, onDone }: ToastProps) {
+const cardStyle: React.CSSProperties = {
+  background: 'rgba(0,0,0,0.8)',
+  color: '#eee',
+  padding: '10px 12px',
+  borderRadius: 10,
+  fontFamily: 'system-ui, -apple-system, sans-serif',
+  fontSize: 13,
+  lineHeight: 1.4,
+  border: '1px solid rgba(255,255,255,0.1)',
+  boxSizing: 'border-box',
+  height: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'center',
+}
+
+export function Toast({ message, duration = 4500, onDone, embedded }: ToastProps) {
   const [visible, setVisible] = useState(false)
   const [text, setText] = useState<string | null>(null)
 
@@ -19,59 +37,68 @@ export function Toast({ message, duration = 4500, onDone }: ToastProps) {
     setVisible(true)
     const t = setTimeout(() => {
       setVisible(false)
-      // clear after fade
       setTimeout(() => onDone?.(), 280)
     }, duration)
     return () => clearTimeout(t)
   }, [message, duration, onDone])
 
-  if (!text) return null
+  if (!text && !embedded) return null
 
   const dismiss = () => {
     setVisible(false)
     onDone?.()
   }
 
-  return (
+  const body = (
     <div
-      onClick={dismiss}
-      onTouchEnd={(e) => {
-        e.preventDefault()
-        dismiss()
-      }}
-      role="button"
-      aria-label="Dismiss message"
+      onClick={text && visible ? dismiss : undefined}
+      onTouchEnd={
+        text && visible
+          ? (e) => {
+              e.preventDefault()
+              dismiss()
+            }
+          : undefined
+      }
+      role={text && visible ? 'button' : undefined}
+      aria-label={text && visible ? 'Dismiss message' : undefined}
       style={{
-        position: 'absolute',
-        // Sit low so it does not cover units / map center
-        bottom: 'max(16px, env(safe-area-inset-bottom, 16px))',
-        left: '50%',
-        transform: `translateX(-50%) translateY(${visible ? 0 : 16}px)`,
-        opacity: visible ? 1 : 0,
-        transition: 'opacity 0.25s ease, transform 0.25s ease',
-        zIndex: 40,
-        pointerEvents: visible ? 'auto' : 'none',
-        maxWidth: 'min(92vw, 360px)',
-        cursor: 'pointer',
+        ...cardStyle,
+        opacity: visible && text ? 1 : embedded ? 0.55 : 0,
+        cursor: visible && text ? 'pointer' : 'default',
+        transition: 'opacity 0.25s ease',
+        minHeight: 72,
       }}
     >
-      <div
-        style={{
-          background: 'rgba(15,15,30,0.94)',
-          color: '#f0f0f0',
-          padding: '12px 18px',
-          borderRadius: 12,
-          fontFamily: 'system-ui, -apple-system, sans-serif',
-          fontSize: 14,
-          lineHeight: 1.4,
-          textAlign: 'center',
-          boxShadow: '0 8px 28px rgba(0,0,0,0.5)',
-          border: '1px solid rgba(255,255,255,0.12)',
-        }}
-      >
-        {text}
-        <div style={{ fontSize: 11, opacity: 0.45, marginTop: 6 }}>Tap to dismiss</div>
-      </div>
+      {visible && text ? (
+        <>
+          <div>{text}</div>
+          <div style={{ fontSize: 11, opacity: 0.45, marginTop: 6 }}>Tap to dismiss</div>
+        </>
+      ) : (
+        <div style={{ opacity: 0.6 }}>Tips appear here</div>
+      )}
+    </div>
+  )
+
+  if (embedded) {
+    return <div style={{ flex: 1, minWidth: 0, height: '100%' }}>{body}</div>
+  }
+
+  if (!text) return null
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        bottom: 'max(16px, env(safe-area-inset-bottom, 16px))',
+        left: 12,
+        right: 12,
+        zIndex: 40,
+        pointerEvents: visible ? 'auto' : 'none',
+      }}
+    >
+      {body}
     </div>
   )
 }

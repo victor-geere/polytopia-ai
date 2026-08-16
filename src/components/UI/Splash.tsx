@@ -1,8 +1,18 @@
 import { useState } from 'react'
 import type { AiConfig, AiProvider } from '../../game/aiCompact'
 
+export type BoardSizeOption = 8 | 12 | 16 | 20 | 24
+export type DifficultyLevel = 'easy' | 'normal' | 'hard'
+
+export interface StartConfig {
+  mode: 'pass-and-play' | 'vs-ai'
+  ai?: AiConfig
+  boardSize: BoardSizeOption
+  difficulty: DifficultyLevel
+}
+
 interface SplashProps {
-  onStart: (config: { mode: 'pass-and-play' | 'vs-ai'; ai?: AiConfig }) => void
+  onStart: (config: StartConfig) => void
   yourTribe: string
 }
 
@@ -13,25 +23,42 @@ const PROVIDERS: { id: AiProvider; label: string }[] = [
   { id: 'huggingface', label: 'Hugging Face' },
 ]
 
+const BOARD_SIZES: { value: BoardSizeOption; label: string }[] = [
+  { value: 8, label: '8 × 8 (Tiny)' },
+  { value: 12, label: '12 × 12 (Small)' },
+  { value: 16, label: '16 × 16 (Classic)' },
+  { value: 20, label: '20 × 20 (Large)' },
+  { value: 24, label: '24 × 24 (Huge)' },
+]
+
+const DIFFICULTIES: { value: DifficultyLevel; label: string; hint: string }[] = [
+  { value: 'easy', label: 'Easy', hint: 'More starting stars, longer perfection timer' },
+  { value: 'normal', label: 'Normal', hint: 'Standard stars and 30-turn perfection' },
+  { value: 'hard', label: 'Hard', hint: 'Fewer stars, tighter 25-turn perfection' },
+]
+
 export function Splash({ onStart, yourTribe }: SplashProps) {
   const [playMode, setPlayMode] = useState<'pass-and-play' | 'vs-ai'>('pass-and-play')
   const [provider, setProvider] = useState<AiProvider>('deepseek')
   const [apiKey, setApiKey] = useState('')
+  const [boardSize, setBoardSize] = useState<BoardSizeOption>(16)
+  const [difficulty, setDifficulty] = useState<DifficultyLevel>('normal')
 
   const deepseekReady = provider === 'deepseek' && apiKey.trim().length > 0
   const canStartAi = playMode === 'vs-ai' && deepseekReady
-  const canStart =
-    playMode === 'pass-and-play' || canStartAi
+  const canStart = playMode === 'pass-and-play' || canStartAi
 
   const handleStart = () => {
     if (playMode === 'pass-and-play') {
-      onStart({ mode: 'pass-and-play' })
+      onStart({ mode: 'pass-and-play', boardSize, difficulty })
       return
     }
     if (!canStartAi) return
     onStart({
       mode: 'vs-ai',
       ai: { provider: 'deepseek', apiKey: apiKey.trim() },
+      boardSize,
+      difficulty,
     })
   }
 
@@ -75,6 +102,51 @@ export function Splash({ onStart, yourTribe }: SplashProps) {
         }}
       >
         <div style={{ fontWeight: 700, marginBottom: 10, color: '#ffd700', textAlign: 'center' }}>
+          Setup
+        </div>
+
+        <label style={{ display: 'block', fontSize: 13, marginBottom: 6, opacity: 0.9 }}>
+          Board size
+        </label>
+        <select
+          value={boardSize}
+          onChange={(e) => setBoardSize(Number(e.target.value) as BoardSizeOption)}
+          style={selectStyle}
+        >
+          {BOARD_SIZES.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+
+        <label style={{ display: 'block', fontSize: 13, marginTop: 14, marginBottom: 6, opacity: 0.9 }}>
+          Difficulty
+        </label>
+        <select
+          value={difficulty}
+          onChange={(e) => setDifficulty(e.target.value as DifficultyLevel)}
+          style={selectStyle}
+        >
+          {DIFFICULTIES.map((d) => (
+            <option key={d.value} value={d.value}>
+              {d.label}
+            </option>
+          ))}
+        </select>
+        <div style={{ fontSize: 11, opacity: 0.55, marginTop: 6 }}>
+          {DIFFICULTIES.find((d) => d.value === difficulty)?.hint}
+        </div>
+
+        <div
+          style={{
+            fontWeight: 700,
+            marginTop: 18,
+            marginBottom: 10,
+            color: '#ffd700',
+            textAlign: 'center',
+          }}
+        >
           Game mode
         </div>
 
