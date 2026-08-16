@@ -2,7 +2,8 @@ import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { Suspense, useState, useCallback } from 'react'
 import { createInitialState, endTurn } from './game'
-import { findPath, isReachable } from './game/pathfinding'
+import { findPath, isReachable, chebyshev } from './game/pathfinding'
+import { resolveCombat, canAttack } from './game/combat'
 import { PolytopiaWorld } from './components/World/PolytopiaWorld'
 import type { GameState } from './game/types'
 
@@ -19,28 +20,62 @@ function App() {
 
   const currentPlayer = state.players[state.currentPlayerIndex]
 
-  const handleTileClick = useCallback(
-    (x: number, y: number) => {
+  const tryMoveOrAttack = useCallback(
+    (targetX: number, targetY: number) => {
       if (!selectedUnitId || state.gameOver) return
       const unit = state.units[selectedUnitId]
       if (!unit || unit.tribe !== currentPlayer.tribe || unit.acted) return
 
-      if (!isReachable(state, unit.x, unit.y, x, y, unit.movement)) return
+      // Check for enemy unit on target tile
+      const enemy = Object.values(state.units).find(
+        (u) => u.x === targetX && u.y === targetY && u.tribe !== unit.tribe && u.health > 0
+      )
 
-      const path = findPath(state, unit.x, unit.y, x, y, unit.movement)
+      if (enemy) {
+        const dist = chebyshev(unit.x, unit.y, enemy.x, enemy.y)
+        if (!canAttack(unit, enemy, dist)) return
+
+        const tile = state.tiles[enemy.y][enemy.x]
+        const { attacker, defender } = resolveCombat(unit, enemy, tile)
+
+        setState((prev) => {
+          const units = { ...prev.units }
+          units[attacker.id] = attacker
+          if (defender.health <= 0) {
+            delete units[defender.id]
+            // Remove from player unit list
+            const players = prev.players.map((p) => {
+              if (p.tribe === defender.tribe) {
+                return {
+                  ...p,
+                  units: p.units.filter((id) => id !== defender.id),
+                }
+              }
+              return p
+            })
+            return { ...prev, units, players }
+          }
+          units[defender.id] = defender
+          return { ...prev, units }
+        })
+        setSelectedUnitId(null)
+        return
+      }
+
+      // Movement
+      if (!isReachable(state, unit.x, unit.y, targetX, targetY, unit.movement)) return
+      const path = findPath(state, unit.x, unit.y, targetX, targetY, unit.movement)
       if (!path) return
 
-      // Apply move in pure state
       setState((prev) => {
         const units = { ...prev.units }
-        const moved = {
+        units[selectedUnitId] = {
           ...units[selectedUnitId],
-          x,
-          y,
+          x: targetX,
+          y: targetY,
           movement: 0,
           acted: true,
         }
-        units[selectedUnitId] = moved
         return { ...prev, units }
       })
       setSelectedUnitId(null)
@@ -88,7 +123,7 @@ function App() {
         />
       </Canvas>
 
-      {/* Minimal debug HUD for Phase 4 */}
+      {/* HUD */}
       <div
         style={{
           position: 'absolute',
@@ -97,35 +132,45 @@ function App() {
           color: '#eee',
           fontFamily: 'system-ui, sans-serif',
           fontSize: 14,
-          background: 'rgba(0,0,0,0.55)',
-          padding: '8px 12px',
-          borderRadius: 8,
-          pointerEvents: 'none',
+          background: 'rgba(0,0,0,0.6)',
+          padding: '10px 14px',
+          borderRadius: 10,
+          minWidth: 180,
         }}
       >
-        <div>Turn {state.turn} / {state.maxTurns}</div>
+        <div style={{ fontWeight: 700, marginBottom: 4 }}>
+          Turn {state.turn}{state.mode === 'perfection' ? ` / ${state.maxTurns}` : ''}
+        </div>
         <div>
           {currentPlayer.tribe.toUpperCase()} — ☆ {currentPlayer.stars}
         </div>
-        <div style={{ opacity: 0.75, marginTop: 4 }}>
-          {selectedUnitId ? `Selected: ${selectedUnitId}` : 'Tap a unit to select'}
+        <div style={{ opacity: 0.8, marginTop: 6, fontSize: 12 }}>
+          {selectedUnitId
+            ? 'Unit selected — click enemy to attack or empty tile to move'
+            : 'Select one of your units'}
         </div>
+        {state.gameOver && (
+          <div style={{ marginTop: 8, color: '#ffd700', fontWeight: 700 }}>
+            Winner: {state.winner?.toUpperCase()}
+          </div>
+        )}
       </div>
 
       <button
         onClick={handleEndTurn}
+        disabled={state.gameOver}
         style={{
           position: 'absolute',
           bottom: 20,
           right: 20,
-          padding: '12px 20px',
+          padding: '12px 22px',
           fontSize: 16,
           fontWeight: 600,
-          background: '#4a7c59',
+          background: state.gameOver ? '#555' : '#4a7c59',
           color: 'white',
           border: 'none',
           borderRadius: 10,
-          cursor: 'pointer',
+          cursor: state.gameOver ? 'default' : 'pointer',
           boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
         }}
       >
